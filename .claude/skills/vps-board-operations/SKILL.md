@@ -48,20 +48,23 @@ GitHub GraphQL is blocked. Project fields therefore go through the **board bridg
 
 Organization `Pivot-Softwares`, repository `Pivot-Softwares/VPS-Configuration`, Project 1
 ([VPS Configuration](https://github.com/orgs/Pivot-Softwares/projects/1), the owner's copy of the Raid Manager
-Project). Fill this table from the first `dump-config` and keep it current; re-read
-it if a call fails with an unknown id. The bridge works by names, so the ids here are for checking, not for typing.
+Project). Read from `dump-config` on 2026-10-06 (board run 4); keep it current, and re-read it if a call fails
+with an unknown id. The bridge works by names, so the ids here are for checking, not for typing.
 
 | Field | Field id | Values (option or iteration id) |
 | --- | --- | --- |
-| Status | to fill | Backlog, Ready, In Progress, In Review, Blocked, Done, Canceled |
-| Sprint | to fill | two-week iterations (spec §22) |
-| Delivery Stage | to fill | Business Analysis, Functional Analysis, Architecture Analysis, Development, Testing, Deployment |
-| Story Points | to fill | a number |
-| Risk | to fill | Low, Medium, High |
-| Priority | to fill | P0 Critical, P1 High, P2 Normal, P3 Later |
-| Area | to fill | to be agreed with the owner: the copy carries RaidManager's product areas |
-| Start date | to fill | a date |
-| Target date | to fill | a date |
+| Status | `PVTSSF_lADOFC5Sts4Bl7IIzhkmEH0` | Backlog `f75ad846`, Ready `d41c15e0`, In Progress `47fc9ee4`, In Review `46ac76c5`, Blocked `b83f351d`, Done `98236657`, Canceled `ac06ee45` |
+| Sprint | `PVTIF_lADOFC5Sts4Bl7IIzhkmEI0` | Sprint 1 `963b920e` (2026-10-06), Sprint 2 `39d9cf14` (2026-10-20); 14 days each |
+| Delivery Stage | `PVTSSF_lADOFC5Sts4Bl7IIzhkmEI4` | Business Analysis `9d9164e9`, Functional Analysis `8eadb407`, Architecture Analysis `e1670f61`, Development `ecb25aca`, Testing `68dcaffd`, Deployment `9313482e` |
+| Story Points | `PVTF_lADOFC5Sts4Bl7IIzhkmEI8` | a number |
+| Risk | `PVTSSF_lADOFC5Sts4Bl7IIzhkmEJA` | Low `047760b3`, Medium `8b7214fc`, High `099e0d7c` |
+| Priority | `PVTSSF_lADOFC5Sts4Bl7IIzhkmEIo` | P0 Critical `2e29488f`, P1 High `14c3c65c`, P2 Normal `1abe36cd`, P3 Later `fe47cb25` |
+| Area | `PVTSSF_lADOFC5Sts4Bl7IIzhkmEIk` | still RaidManager's values; the owner chose Security, Server, Deployment, DNS & Mail, Monitoring & Backups, Process (#5), set by #8 |
+| Start date | `PVTF_lADOFC5Sts4Bl7IIzhkmEIs` | a date |
+| Target date | `PVTF_lADOFC5Sts4Bl7IIzhkmEIw` | a date |
+
+Project node id `PVT_kwDOFC5Sts4Bl7II`. Milestones are releases: v1.0 #1. The sprints each release owns are in the
+"Sprint sequence" table of its record in `docs/planning/releases/`.
 
 ## Recipes
 

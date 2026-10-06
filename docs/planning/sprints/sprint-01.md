@@ -10,7 +10,7 @@ Specification](../../reference/work-management-specification.md) requires (§7, 
 | Start | 2026-10-06 00:00 Europe/Brussels, inclusive |
 | End | 2026-10-20 00:00 Europe/Brussels, exclusive |
 | Duration | Two weeks (specification §22) |
-| Release | Unknown: needs owner decision (the first release record) |
+| Release | [`v1.0`](../releases/v1.0.md), its first delivery sprint |
 
 The owner chose these dates on 2026-10-06, as the recommended option, so planned work can start at once.
 
@@ -21,17 +21,32 @@ then agree the plan for the VPS's security and the three deployments as decision
 
 ## Capacity assumptions
 
-Unknown: needs owner decision at sprint planning. This repository has no velocity yet (specification §9); the
-assumption will be conservative and recorded here.
+20 Story Points, the owner's decision of 2026-10-06 (recorded on #5): conservative, since this repository has no
+velocity yet (specification §9). Selected: 10 points.
 
 ## Selected scope
 
-None selected yet. The board foundation was delivered without work items by the owner's bootstrap decision
-(ADR-0001); the first epic, feature and story are created after it merges and selected here with the owner.
+The board foundation (#1, #2) was delivered without work items by the owner's bootstrap decision (ADR-0001). The
+owner selected these items on 2026-10-06 (recorded on #5). Each planned window is the sprint (2026-10-06 to
+2026-10-19, both inclusive on the Project).
+
+| Item | Type | Story Points | Tasks (Delivery Stage) | Waits for |
+| --- | --- | --- | --- | --- |
+| #21 The board bridge and the sprint gate read no Project items | Bug | 2 | #22 (Development) | None |
+| #5 Plan release v1.0 and Sprint 1 in the repository | Improvement | 2 | #6 (Business Analysis) | None |
+| #7 Let the board bridge manage sprints and field options | Improvement | 3 | #8 (Development) | #6 for the gate |
+| #24 Keep native issue types in step with the type labels | Improvement | 3 | #25 (Development) | #6 |
+
+Bug #21 and task #22 started on 2026-10-06 under a recorded exception to the gate (standing owner decision on #21:
+blocking board bugs come first), and #6 under a one-time exception for condition 4, since the release record is its
+own deliverable (owner decision on #6). The bug was completed on 2026-10-06 by the merge of #23.
 
 ## Assignment history
 
-None.
+| Date | Change | Recorded on |
+| --- | --- | --- |
+| 2026-10-06 | #5, #6, #7, #8, #21 and #22 selected. | #5 |
+| 2026-10-06 | #24 and #25 added. | #5 |
 
 ## Outcome
 
