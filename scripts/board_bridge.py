@@ -13,9 +13,20 @@ Operations (environment OPERATION, payload in PAYLOAD):
   preflight    {"task": 12}                          the active-sprint gate of work_gate.py; fails on any FAIL
   report       {"apply_labels": true}                the board report of work_gate.py
   set-fields   {"dry_run": true, "changes": [...]}   each change {"issue": 12, "field": "Status", "value": "Ready"}
+  add-iteration {"dry_run": true, "field": "Sprint", "title": "Sprint 3", "start_date": "2026-11-03"}
+                                                     adds an iteration ("duration" in days defaults to the field's)
+  set-options  {"dry_run": true, "field": "Area", "options": [{"name": "Security", "from": "Platform"}]}
+                                                     makes the listed options the field's options, keeping the ids of
+                                                     options kept or renamed ("from"); "remove_used": true allows
+                                                     removing options that items still use
 
-Values are option names, iteration titles, numbers, ISO dates, text, or null to clear. Nothing from the payload
-reaches a shell: every call passes values to `gh` as separate arguments and GraphQL variables.
+Values are option names, iteration titles, numbers, ISO dates, text, or null to clear. An iteration title resolves to
+the current or a future iteration first; a title shared by two current or future iterations, or only by completed
+ones, is refused. Nothing from the payload reaches a shell: every call passes values to `gh` as separate arguments,
+GraphQL variables or a JSON request body.
+
+Field changes keep every item's value: options and iterations are sent with their ids when GitHub's schema accepts
+them, and the bridge reads the items back afterwards and sets again any value the change dropped.
 """
 
 from __future__ import annotations
@@ -26,12 +37,13 @@ import json
 import os
 import subprocess
 import sys
-from dataclasses import dataclass
-from datetime import date, datetime, timezone
+import tempfile
+from dataclasses import dataclass, field as dataclass_field
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-OPERATIONS = ("dump-config", "read-items", "preflight", "report", "set-fields")
+OPERATIONS = ("dump-config", "read-items", "preflight", "report", "set-fields", "add-iteration", "set-options")
 BEGIN, END = "BOARD-RESULT-BEGIN", "BOARD-RESULT-END"
 MAX_CHANGES = 200
 
@@ -39,7 +51,7 @@ CONFIG_QUERY = """query($org: String!, $number: Int!) { organization(login: $org
   id title url
   fields(first: 50) { nodes {
     ... on ProjectV2FieldCommon { id name dataType }
-    ... on ProjectV2SingleSelectField { options { id name } }
+    ... on ProjectV2SingleSelectField { options { id name color description } }
     ... on ProjectV2IterationField { configuration { duration startDay
       iterations { id title startDate duration } completedIterations { id title startDate duration } } } } }
   views(first: 50) { nodes { id number name layout filter } } } } }"""
@@ -61,6 +73,14 @@ CLEAR = """mutation($project: ID!, $item: ID!, $field: ID!) {
 SET = """mutation($project: ID!, $item: ID!, $field: ID!, $value: %s) {
   updateProjectV2ItemFieldValue(input: {projectId: $project, itemId: $item, fieldId: $field,
     value: {%s: $value}}) { projectV2Item { id } } }"""
+UPDATE_FIELD = """mutation($input: UpdateProjectV2FieldInput!) {
+  updateProjectV2Field(input: $input) { projectV2Field { ... on ProjectV2FieldCommon { id name } } } }"""
+INPUT_FIELDS = """query($name: String!) { __type(name: $name) { inputFields { name
+  type { kind name ofType { kind name ofType { kind name ofType { kind name } } } } } } }"""
+OPTION_INPUT = "ProjectV2SingleSelectFieldOptionInput"
+ITERATION_CONFIGURATION_INPUT = "ProjectV2IterationFieldConfigurationInput"
+COLORS = ("GRAY", "BLUE", "GREEN", "YELLOW", "ORANGE", "RED", "PINK", "PURPLE")
+MAX_OPTIONS = 50
 # Field data type -> (GraphQL variable type, value key, gh flag: -f sends a string, -F a number).
 SETTERS = {
     "SINGLE_SELECT": ("String!", "singleSelectOptionId", "-f"),
@@ -81,6 +101,7 @@ class Field:
     name: str
     data_type: str
     choices: dict[str, str]
+    ambiguous: frozenset[str] = dataclass_field(default_factory=frozenset)
 
     @classmethod
     def from_api(cls, node: dict) -> Field | None:
@@ -88,15 +109,21 @@ class Field:
             return None
         choices = {option["name"]: option["id"] for option in node.get("options") or []}
         configuration = node.get("configuration") or {}
-        for iteration in configuration.get("iterations", []) + configuration.get("completedIterations", []):
-            choices[iteration["title"]] = iteration["id"]
-        return cls(node["id"], node["name"], node["dataType"], choices)
+        current, ambiguous = iteration_titles(configuration.get("iterations") or [])
+        completed, ambiguous_completed = iteration_titles(configuration.get("completedIterations") or [])
+        ambiguous |= {title for title in ambiguous_completed if title not in current}
+        choices.update({title: ident for title, ident in completed.items() if title not in current})
+        choices.update(current)
+        return cls(node["id"], node["name"], node["dataType"], choices, frozenset(ambiguous))
 
     def resolve(self, value: Any) -> str | None:
         """Turns a payload value into the string `gh` sends, or None to clear the field."""
         if value is None:
             return None
         if self.data_type in ("SINGLE_SELECT", "ITERATION"):
+            if isinstance(value, str) and value in self.ambiguous:
+                raise BridgeError(f"{self.name}: {value!r} names more than one iteration; rename one in the "
+                                  f"Project's settings.")
             if not isinstance(value, str) or value not in self.choices:
                 raise BridgeError(f"{self.name}: {value!r} is not one of {sorted(self.choices)}.")
             return self.choices[value]
@@ -114,6 +141,17 @@ class Field:
                 raise BridgeError(f"{self.name}: {value!r} is not text.")
             return value
         raise BridgeError(f"{self.name}: fields of type {self.data_type} can't be set by the bridge.")
+
+
+def iteration_titles(iterations: list[dict]) -> tuple[dict[str, str], set[str]]:
+    """Maps each title to its iteration id, and returns the titles that more than one iteration carries."""
+    titles: dict[str, str] = {}
+    duplicates: set[str] = set()
+    for iteration in iterations:
+        if iteration["title"] in titles:
+            duplicates.add(iteration["title"])
+        titles[iteration["title"]] = iteration["id"]
+    return {title: ident for title, ident in titles.items() if title not in duplicates}, duplicates
 
 
 @dataclass(frozen=True)
@@ -155,6 +193,32 @@ def issue_numbers(payload: dict, key: str) -> list[int]:
     return values
 
 
+def check_keys(payload: dict, required: set[str], optional: set[str]) -> None:
+    missing, unknown = required - set(payload), set(payload) - required - optional
+    if missing or unknown:
+        raise BridgeError(f"Payload keys: missing {sorted(missing)}, unknown {sorted(unknown)}.")
+
+
+def dry_run_flag(payload: dict) -> bool:
+    dry_run = payload.get("dry_run", True)
+    if not isinstance(dry_run, bool):
+        raise BridgeError("dry_run must be true or false.")
+    return dry_run
+
+
+def text(value: Any, name: str, limit: int = 100) -> str:
+    if not isinstance(value, str) or not value.strip() or len(value) > limit or value != value.strip():
+        raise BridgeError(f"{name} must be text of 1 to {limit} characters without surrounding spaces: {value!r}.")
+    return value
+
+
+def unwrap(kind: dict) -> dict:
+    """The named type inside NON_NULL and LIST wrappers of an introspection type reference."""
+    while kind.get("ofType"):
+        kind = kind["ofType"]
+    return kind
+
+
 Runner = Callable[..., str]
 
 
@@ -168,11 +232,15 @@ class Board:
 
     def __init__(self, org: str, number: int, repository: str, gh: Runner = run_gh) -> None:
         self.org, self.number, self.repository, self.gh = org, number, repository, gh
-        project = self.graphql(CONFIG_QUERY, org=org, number=number)["organization"]["projectV2"]
-        if project is None:
-            raise BridgeError(f"Project {number} of {org} is not visible to the bridge's App.")
-        self.project = project
         self.diagnostics: dict[str, int] = {}
+        self.load()
+
+    def load(self) -> None:
+        """Reads the Project's fields and views; called again after a field change."""
+        project = self.graphql(CONFIG_QUERY, org=self.org, number=self.number)["organization"]["projectV2"]
+        if project is None:
+            raise BridgeError(f"Project {self.number} of {self.org} is not visible to the bridge's App.")
+        self.project = project
         self.fields = {field.name: field for node in project["fields"]["nodes"]
                        if (field := Field.from_api(node)) is not None}
 
@@ -180,11 +248,40 @@ class Board:
         arguments = ["api", "graphql", "-f", f"query={query}"]
         for name, value in variables.items():
             arguments += ["-F" if isinstance(value, int) else "-f", f"{name}={value}"]
-        response = json.loads(self.gh(*arguments))
+        return self.answer(self.gh(*arguments))
+
+    def graphql_body(self, query: str, variables: dict) -> dict:
+        """Sends nested variables (input objects) as a JSON request body, which `-f` and `-F` can't express."""
+        with tempfile.NamedTemporaryFile("w", suffix=".json", encoding="utf-8", delete=False) as handle:
+            json.dump({"query": query, "variables": variables}, handle)
+        try:
+            return self.answer(self.gh("api", "graphql", "--input", handle.name))
+        finally:
+            os.unlink(handle.name)
+
+    @staticmethod
+    def answer(output: str) -> dict:
+        response = json.loads(output)
         if response.get("errors"):
             messages = "; ".join(error.get("message", str(error)) for error in response["errors"])
             raise BridgeError(f"GitHub answered with errors: {messages}")
         return response["data"]
+
+    def node(self, name: str, data_type: str) -> dict:
+        field = self.fields.get(name)
+        if field is None or field.data_type != data_type:
+            fitting = sorted(key for key, value in self.fields.items() if value.data_type == data_type)
+            raise BridgeError(f"{name!r} is not a {data_type} field; the Project has {fitting}.")
+        return next(node for node in self.project["fields"]["nodes"] if node.get("id") == field.id)
+
+    def input_fields(self, type_name: str) -> dict[str, dict]:
+        found = self.graphql(INPUT_FIELDS, name=type_name)["__type"]
+        if not found:
+            raise BridgeError(f"GitHub's schema has no {type_name}; the field can't be changed through the API.")
+        return {entry["name"]: entry["type"] for entry in found["inputFields"]}
+
+    def accepts_ids(self, type_name: str) -> bool:
+        return "id" in self.input_fields(type_name)
 
     def config(self) -> dict:
         return {"project": {key: self.project[key] for key in ("id", "title", "url")},
@@ -264,6 +361,128 @@ class Board:
             results.append({**change.__dict__, "from": current, "result": "would set" if dry_run else "set"})
         return {"dry_run": dry_run, "changes": results}
 
+    def usage(self, name: str, items: dict[int, dict] | None = None) -> dict[int, str]:
+        """Each issue's current value of a field, by option name or iteration title."""
+        items = self.items() if items is None else items
+        return {number: item["fields"][name] for number, item in items.items() if name in item["fields"]}
+
+    def change_field(self, name: str, update: dict, before: dict[int, str], renamed: dict[str, str]) -> dict:
+        """Sends a field update, then reads the items back and sets again every value the update dropped."""
+        self.graphql_body(UPDATE_FIELD, {"input": {"fieldId": self.fields[name].id, **update}})
+        self.load()
+        field = self.fields[name]
+        items = self.items()
+        after = self.usage(name, items)
+        restored, cleared = [], []
+        for number, old in sorted(before.items()):
+            wanted = renamed.get(old, old)
+            if after.get(number) == wanted:
+                continue
+            if wanted not in field.choices or wanted in field.ambiguous:
+                cleared.append({"issue": number, "value": old})
+                continue
+            self.write(items[number]["item"], field, field.choices[wanted])
+            restored.append({"issue": number, "value": wanted})
+        return {"restored": restored, "cleared": cleared}
+
+    def add_iteration(self, payload: dict) -> dict:
+        check_keys(payload, {"field", "title", "start_date"}, {"dry_run", "duration"})
+        dry_run = dry_run_flag(payload)
+        name, title = text(payload["field"], "field"), text(payload["title"], "title")
+        configuration = self.node(name, "ITERATION")["configuration"]
+        duration = payload.get("duration", configuration["duration"])
+        if isinstance(duration, bool) or not isinstance(duration, int) or not 1 <= duration <= 56:
+            raise BridgeError(f"duration must be a whole number of days from 1 to 56: {duration!r}.")
+        try:
+            start = date.fromisoformat(str(payload["start_date"]))
+        except ValueError as error:
+            raise BridgeError(f"start_date {payload['start_date']!r} is not an ISO date.") from error
+        existing = configuration.get("iterations", []) + configuration.get("completedIterations", [])
+        end = start + timedelta(days=duration)
+        for iteration in existing:
+            other = date.fromisoformat(iteration["startDate"])
+            if iteration["title"] == title:
+                raise BridgeError(f"{name} already has an iteration titled {title!r} ({iteration['startDate']}).")
+            if start < other + timedelta(days=iteration["duration"]) and other < end:
+                raise BridgeError(f"{title!r} from {start} for {duration} days overlaps {iteration['title']!r} "
+                                  f"from {iteration['startDate']}.")
+        new = {"title": title, "startDate": start.isoformat(), "duration": duration}
+        result: dict[str, Any] = {"dry_run": dry_run, "field": name, "add": new,
+                                  "keep": [{key: iteration[key] for key in ("id", "title", "startDate", "duration")}
+                                           for iteration in existing]}
+        if dry_run:
+            return result
+        iteration_type = unwrap(self.input_fields(ITERATION_CONFIGURATION_INPUT)["iterations"])["name"]
+        with_ids = self.accepts_ids(iteration_type)
+        iterations = [{**({"id": iteration["id"]} if with_ids else {}),
+                       **{key: iteration[key] for key in ("title", "startDate", "duration")}} for iteration in existing]
+        iterations = sorted(iterations + [new], key=lambda iteration: iteration["startDate"])
+        before = self.usage(name)
+        update = {"iterationConfiguration": {"startDate": iterations[0]["startDate"],
+                                             "duration": configuration["duration"], "iterations": iterations}}
+        result.update(self.change_field(name, update, before, {}), ids_sent=with_ids)
+        configuration = self.node(name, "ITERATION")["configuration"]
+        result["iterations"] = configuration.get("iterations", []) + configuration.get("completedIterations", [])
+        return result
+
+    def set_options(self, payload: dict) -> dict:
+        check_keys(payload, {"field", "options"}, {"dry_run", "remove_used"})
+        dry_run = dry_run_flag(payload)
+        remove_used = payload.get("remove_used", False)
+        if not isinstance(remove_used, bool):
+            raise BridgeError("remove_used must be true or false.")
+        name = text(payload["field"], "field")
+        current = {option["name"]: option for option in self.node(name, "SINGLE_SELECT")["options"]}
+        raw = payload["options"]
+        if not isinstance(raw, list) or not 1 <= len(raw) <= MAX_OPTIONS:
+            raise BridgeError(f"options must be a list of 1 to {MAX_OPTIONS} options.")
+        options, renamed, sources = [], {}, set()
+        for entry in raw:
+            if not isinstance(entry, dict):
+                raise BridgeError(f"Each option is an object: {entry!r}.")
+            check_keys(entry, {"name"}, {"from", "color", "description"})
+            option_name = text(entry["name"], "name")
+            source = text(entry.get("from", option_name), "from")
+            old = current.get(source)
+            if "from" in entry and old is None:
+                raise BridgeError(f"{name} has no option {source!r} to rename; it has {sorted(current)}.")
+            if old is not None and source in sources:
+                raise BridgeError(f"Option {source!r} is kept twice.")
+            color = entry.get("color", (old or {}).get("color", "GRAY"))
+            if color not in COLORS:
+                raise BridgeError(f"color must be one of {COLORS}: {color!r}.")
+            description = entry.get("description", (old or {}).get("description") or "")
+            if not isinstance(description, str) or len(description) > 300:
+                raise BridgeError(f"description must be text of at most 300 characters: {description!r}.")
+            if old is not None:
+                sources.add(source)
+                if source != option_name:
+                    renamed[source] = option_name
+            options.append({"id": (old or {}).get("id"), "name": option_name, "color": color,
+                            "description": description})
+        names = [option["name"] for option in options]
+        if len(set(names)) != len(names):
+            raise BridgeError(f"Option names must be unique: {names}.")
+        before = self.usage(name)
+        removed = sorted(set(current) - sources)
+        in_use = {option: sorted(number for number, value in before.items() if value == option) for option in removed}
+        in_use = {option: numbers for option, numbers in in_use.items() if numbers}
+        result: dict[str, Any] = {"dry_run": dry_run, "field": name, "options": options, "renamed": renamed,
+                                  "removed": removed, "removed_in_use": in_use}
+        if dry_run:
+            return result
+        if in_use and not remove_used:
+            raise BridgeError(f"Removing options still in use would clear their items: {in_use}. Rename them with "
+                              f"\"from\", or pass \"remove_used\": true.")
+        if not self.accepts_ids(OPTION_INPUT):
+            raise BridgeError(f"GitHub's {OPTION_INPUT} takes no option id, so every item would lose its {name}; "
+                              f"nothing was changed.")
+        sent = [{key: value for key, value in option.items() if value is not None} for option in options]
+        kept = {number: value for number, value in before.items() if value not in in_use}
+        result.update(self.change_field(name, {"singleSelectOptions": sent}, kept, renamed))
+        result["options_after"] = self.node(name, "SINGLE_SELECT")["options"]
+        return result
+
 
 def gate(operation: str, payload: dict) -> tuple[dict, bool]:
     """Runs work_gate's preflight or report and returns its printed findings."""
@@ -300,6 +519,10 @@ def run(operation: str, payload: dict, board_factory: Callable[[], Board]) -> tu
                 "item_types": board.diagnostics}, True
     if operation == "set-fields":
         return board.set_fields(payload), True
+    if operation == "add-iteration":
+        return board.add_iteration(payload), True
+    if operation == "set-options":
+        return board.set_options(payload), True
     os.environ["BOARD_PROJECT_ID"] = board.project["id"]
     return gate(operation, payload)
 

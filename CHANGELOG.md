@@ -18,8 +18,12 @@ All notable changes to this repository are documented here. The format follows
   labels, the Sprint 1 record and the project automation reference.
 - The v1.0 release record, the Sprint 1 selection and capacity, and the Project's field, option and iteration ids in
   `vps-board-operations` (#6).
+- Board bridge operations `add-iteration` and `set-options`, which add a sprint and replace a single-select field's
+  options while keeping the ids of existing options and iterations, and set again any item value a change drops (#8).
 
 ### Fixed
 
 - The board bridge and the sprint gate no longer treat Project items they can't read as absent: they stop with the
   number of hidden items and how to fix the App's access, and report GitHub errors (#22).
+- An iteration title now resolves to the current or a future iteration before a completed one, and a title shared by
+  two iterations is refused instead of resolving to either (#8).

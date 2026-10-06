@@ -41,9 +41,21 @@ The agent works from Claude Code cloud sessions, where GitHub GraphQL is blocked
 | `preflight` | Runs the active-sprint gate for a task (`scripts/work_gate.py`); the run fails on any failed condition. |
 | `report` | Runs the board report and keeps the `scheduling-violation` label current. |
 | `set-fields` | Sets or clears field values by name, as a dry run by default, skipping values already set. |
+| `add-iteration` | Adds an iteration (a sprint) to an iteration field, as a dry run by default; refuses a title already used or dates that overlap another iteration. |
+| `set-options` | Makes a list the options of a single-select field, as a dry run by default, keeping the id of each option kept or renamed (`"from"`); shows the options items still use, and refuses to remove them on apply unless `"remove_used": true`. |
 
 The workflow runs only from `main`, one run at a time, and validates every payload against the Project's own fields
 before it writes anything. Payload values never reach a shell or a query's text.
+
+Field changes protect item values (the RaidManager pitfall where recreated options wiped every item's value):
+
+- **Ids are sent:** existing options and iterations go to GitHub with their ids when GitHub's schema accepts them,
+  which the bridge checks by introspection before writing. `set-options` stops without changing anything when the
+  schema takes no option id.
+- **Values are read back:** after the change, the bridge reads every item and sets again any value the change dropped,
+  under the option's new name; the result lists them as `restored`, and values it couldn't set again as `cleared`.
+- **Iteration titles resolve safely:** a title resolves to the current or a future iteration first, a completed one
+  only when no current or future iteration has that title, and a title two iterations share is refused.
 
 ## Rules enforced by the hierarchy guard
 
@@ -71,7 +83,8 @@ These steps are the owner's, in the browser, because neither API can make them:
    issue**, **Item added to project** (Status `Backlog`) and **Auto-add sub-issues to project** on, and turn on
    **Auto-add to project** for `Pivot-Softwares/VPS-Configuration` with the filter `is:issue`.
 4. **Sprint field:** in the Project's **Settings → Sprint**, make the iterations two weeks long and add **Sprint 1**
-   starting 2026-10-06. RaidManager's past iterations, copied with the Project, can be removed there.
+   starting 2026-10-06. RaidManager's past iterations, copied with the Project, can be removed there. Done on
+   2026-10-06; later sprints are added by the agent with `add-iteration` (#7).
 
 ## Verify
 

@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import sys
 import unittest
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from board_bridge import Board, BridgeError, Field, parse_changes, run  # noqa: E402
+from board_bridge import (  # noqa: E402
+    ITERATION_CONFIGURATION_INPUT, OPTION_INPUT, Board, BridgeError, Field, parse_changes, run)
 
 CONFIG = {"organization": {"projectV2": {
     "id": "PVT_1", "title": "VPS Configuration", "url": "https://github.com/orgs/Pivot-Softwares/projects/1",
@@ -20,6 +23,9 @@ CONFIG = {"organization": {"projectV2": {
          "configuration": {"duration": 14, "startDay": 1,
                            "iterations": [{"id": "i_1", "title": "Sprint 1", "startDate": "2026-10-06", "duration": 14}],
                            "completedIterations": []}},
+        {"id": "F_AREA", "name": "Area", "dataType": "SINGLE_SELECT",
+         "options": [{"id": "o_platform", "name": "Platform", "color": "RED", "description": "Old area"},
+                     {"id": "o_tooling", "name": "Tooling", "color": "BLUE", "description": ""}]},
         {"id": "F_POINTS", "name": "Story Points", "dataType": "NUMBER"},
         {"id": "F_START", "name": "Start date", "dataType": "DATE"},
         {},
@@ -30,6 +36,8 @@ CONFIG = {"organization": {"projectV2": {
 ITEMS = {"node": {"items": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": [
     {"id": "PVTI_12", "type": "ISSUE", "content": {"__typename": "Issue", "number": 12}, "fieldValues": {"nodes": [
         {"name": "Backlog", "field": {"name": "Status"}},
+        {"name": "Platform", "field": {"name": "Area"}},
+        {"title": "Sprint 1", "field": {"name": "Sprint"}},
         {"number": 3.0, "field": {"name": "Story Points"}},
         {"text": "Task: one", "field": {"name": "Title"}},
         {},
@@ -39,26 +47,86 @@ ITEMS = {"node": {"items": {"pageInfo": {"hasNextPage": False, "endCursor": None
 ]}}}
 
 
-class FakeGh:
-    """Answers the bridge's gh calls from fixtures and records every call."""
+def wrapped(name: str) -> dict:
+    return {"kind": "NON_NULL", "name": None, "ofType": {"kind": "LIST", "name": None, "ofType": {
+        "kind": "NON_NULL", "name": None, "ofType": {"kind": "INPUT_OBJECT", "name": name}}}}
 
-    def __init__(self, items: dict | None = None, errors: list | None = None) -> None:
+
+class FakeGh:
+    """Answers the bridge's gh calls from fixtures, applies field updates like GitHub, and records every call.
+
+    ids_in_schema: whether GitHub's input types take option and iteration ids. keeps_values: whether items keep their
+    values through a field update (False plays the RaidManager incident, where every value was lost).
+    """
+
+    def __init__(self, items: dict | None = None, errors: list | None = None, ids_in_schema: bool = True,
+                 keeps_values: bool = True) -> None:
         self.calls: list[tuple[str, ...]] = []
-        self.item_page = items or ITEMS
+        self.bodies: list[dict] = []
+        self.config: dict[str, Any] = copy.deepcopy(CONFIG)
+        self.item_page: dict[str, Any] = copy.deepcopy(items or ITEMS)
         self.errors = errors
+        self.ids_in_schema, self.keeps_values = ids_in_schema, keeps_values
 
     def __call__(self, *arguments: str) -> str:
         self.calls.append(arguments)
         if arguments[:2] == ("api", "repos/Pivot-Softwares/VPS-Configuration/issues/13"):
             return json.dumps({"node_id": "I_13"})
+        if "--input" in arguments:
+            with open(arguments[arguments.index("--input") + 1], encoding="utf-8") as handle:
+                body = json.load(handle)
+            self.bodies.append(body)
+            self.update_field(body["variables"]["input"])
+            return json.dumps({"data": {"updateProjectV2Field": {"projectV2Field": {"id": "F", "name": "F"}}}})
         query = next(argument for argument in arguments if argument.startswith("query="))
+        if "__type(name" in query:
+            return json.dumps({"data": {"__type": self.input_type(next(
+                argument[5:] for argument in arguments if argument.startswith("name=")))}})
         if "organization(login" in query:
-            return json.dumps({"data": CONFIG})
+            return json.dumps({"data": self.config})
         if "items(first" in query:
             return json.dumps({"data": self.item_page, **({"errors": self.errors} if self.errors else {})})
         if "addProjectV2ItemById" in query:
             return json.dumps({"data": {"addProjectV2ItemById": {"item": {"id": "PVTI_13"}}}})
         return json.dumps({"data": {}})
+
+    def input_type(self, name: str) -> dict:
+        ident = [{"name": "id", "type": {"kind": "SCALAR", "name": "String"}}] if self.ids_in_schema else []
+        scalars = {OPTION_INPUT: ["name", "color", "description"], "ProjectV2Iteration": ["title", "startDate",
+                                                                                         "duration"]}
+        if name == ITERATION_CONFIGURATION_INPUT:
+            return {"inputFields": [{"name": "iterations", "type": wrapped("ProjectV2Iteration")},
+                                    {"name": "startDate", "type": {"kind": "SCALAR", "name": "Date"}},
+                                    {"name": "duration", "type": {"kind": "SCALAR", "name": "Int"}}]}
+        return {"inputFields": ident + [{"name": field, "type": {"kind": "SCALAR", "name": "String"}}
+                                        for field in scalars[name]]}
+
+    def update_field(self, update: dict) -> None:
+        node = next(node for node in self.config["organization"]["projectV2"]["fields"]["nodes"]
+                    if node.get("id") == update["fieldId"])
+        if "singleSelectOptions" in update:
+            old = {option["id"]: option["name"] for option in node["options"]}
+            node["options"] = [{**option, "id": option.get("id") or f"o_new_{option['name']}"}
+                               for option in update["singleSelectOptions"]]
+            names = {option["id"]: option["name"] for option in node["options"]}
+            renamed = {name: names[ident] for ident, name in old.items() if ident in names}
+        else:
+            configuration = update["iterationConfiguration"]
+            old = {i["id"]: i["title"] for i in node["configuration"]["iterations"]}
+            node["configuration"]["iterations"] = [{**i, "id": i.get("id") or f"i_new_{i['title']}"}
+                                                   for i in configuration["iterations"]]
+            titles = {i["id"]: i["title"] for i in node["configuration"]["iterations"]}
+            renamed = {title: titles[ident] for ident, title in old.items() if ident in titles}
+        for item in self.item_page["node"]["items"]["nodes"]:
+            values = item["fieldValues"]["nodes"]
+            for value in list(values):
+                if (value.get("field") or {}).get("name") != node["name"]:
+                    continue
+                key = "name" if "name" in value else "title"
+                if not self.keeps_values or value[key] not in renamed:
+                    values.remove(value)
+                else:
+                    value[key] = renamed[value[key]]
 
     def mutations(self) -> list[tuple[str, ...]]:
         return [call for call in self.calls if any("updateProjectV2ItemFieldValue" in a or "clearProjectV2" in a
@@ -115,7 +183,8 @@ class BoardTests(unittest.TestCase):
     def test_items_map_issue_numbers_to_field_values_and_skip_drafts(self) -> None:
         items = board(FakeGh()).items()
         self.assertEqual(list(items), [12])
-        self.assertEqual(items[12]["fields"], {"Status": "Backlog", "Story Points": 3.0, "Title": "Task: one"})
+        self.assertEqual(items[12]["fields"], {"Status": "Backlog", "Area": "Platform", "Sprint": "Sprint 1",
+                                               "Story Points": 3.0, "Title": "Task: one"})
 
     def test_hidden_items_stop_the_read_instead_of_disappearing(self) -> None:
         issue_12 = {"id": "PVTI_12", "type": "ISSUE", "content": {"number": 12}, "fieldValues": {"nodes": []}}
@@ -190,6 +259,152 @@ class RunTests(unittest.TestCase):
         self.assertEqual(config["project"]["id"], "PVT_1")
         items, _ = run("read-items", {"issues": [99]}, lambda: board(FakeGh()))
         self.assertEqual(items["items"], {})
+
+
+def iteration_field(current: list[tuple[str, str]], completed: list[tuple[str, str]]) -> Field:
+    def iterations(pairs: list[tuple[str, str]]) -> list[dict]:
+        return [{"id": ident, "title": title, "startDate": "2026-01-01", "duration": 14} for ident, title in pairs]
+    field = Field.from_api({"id": "F", "name": "Sprint", "dataType": "ITERATION", "configuration": {
+        "duration": 14, "iterations": iterations(current), "completedIterations": iterations(completed)}})
+    assert field is not None
+    return field
+
+
+class IterationLookupTests(unittest.TestCase):
+    def test_a_current_or_future_iteration_wins_over_a_completed_one(self) -> None:
+        field = iteration_field([("i_new", "Sprint 1")], [("i_old", "Sprint 1")])
+        self.assertEqual(field.resolve("Sprint 1"), "i_new")
+
+    def test_a_title_only_completed_once_still_resolves(self) -> None:
+        self.assertEqual(iteration_field([], [("i_old", "Sprint 0")]).resolve("Sprint 0"), "i_old")
+
+    def test_ambiguous_titles_are_refused(self) -> None:
+        for current, completed in (([("a", "Sprint 1"), ("b", "Sprint 1")], []),
+                                   ([], [("a", "Sprint 1"), ("b", "Sprint 1")])):
+            with self.subTest(current=current, completed=completed), self.assertRaises(BridgeError) as raised:
+                iteration_field(current, completed).resolve("Sprint 1")
+            self.assertIn("more than one iteration", str(raised.exception))
+
+    def test_a_current_title_is_not_ambiguous_because_of_completed_duplicates(self) -> None:
+        field = iteration_field([("i_new", "Sprint 1")], [("a", "Sprint 1"), ("b", "Sprint 1")])
+        self.assertEqual(field.resolve("Sprint 1"), "i_new")
+
+
+SPRINT_3 = {"field": "Sprint", "title": "Sprint 3", "start_date": "2026-11-03"}
+
+
+class AddIterationTests(unittest.TestCase):
+    def test_dry_run_is_the_default_and_writes_nothing(self) -> None:
+        gh = FakeGh()
+        result = board(gh).add_iteration(SPRINT_3)
+        self.assertTrue(result["dry_run"])
+        self.assertEqual(result["add"], {"title": "Sprint 3", "startDate": "2026-11-03", "duration": 14})
+        self.assertEqual(result["keep"][0]["id"], "i_1")
+        self.assertEqual(gh.bodies, [])
+
+    def test_invalid_iterations_are_refused(self) -> None:
+        payloads: tuple[dict, ...] = (
+            {**SPRINT_3, "title": "Sprint 1"}, {**SPRINT_3, "start_date": "2026-10-13"},
+            {**SPRINT_3, "start_date": "soon"}, {**SPRINT_3, "duration": 0}, {**SPRINT_3, "duration": True},
+            {**SPRINT_3, "field": "Status"}, {**SPRINT_3, "field": "Owner"}, {**SPRINT_3, "title": " "},
+            {**SPRINT_3, "extra": 1}, {"field": "Sprint", "title": "Sprint 3"}, {**SPRINT_3, "dry_run": "no"})
+        for payload in payloads:
+            with self.subTest(payload=payload), self.assertRaises(BridgeError):
+                board(FakeGh()).add_iteration(payload)
+
+    def test_apply_sends_every_iteration_with_its_id_and_keeps_values(self) -> None:
+        gh = FakeGh()
+        result = board(gh).add_iteration({**SPRINT_3, "dry_run": False})
+        (body,) = gh.bodies
+        configuration = body["variables"]["input"]["iterationConfiguration"]
+        self.assertEqual([i.get("id") for i in configuration["iterations"]], ["i_1", None])
+        self.assertEqual(configuration["startDate"], "2026-10-06")
+        self.assertNotIn("Sprint 3", body["query"])
+        self.assertTrue(result["ids_sent"])
+        self.assertEqual((result["restored"], result["cleared"]), ([], []))
+        self.assertEqual(gh.mutations(), [])
+        self.assertIn("Sprint 3", [i["title"] for i in result["iterations"]])
+
+    def test_values_dropped_by_github_are_set_again(self) -> None:
+        gh = FakeGh(ids_in_schema=False, keeps_values=False)
+        result = board(gh).add_iteration({**SPRINT_3, "dry_run": False})
+        self.assertFalse(result["ids_sent"])
+        self.assertEqual(result["restored"], [{"issue": 12, "value": "Sprint 1"}])
+        (update,) = gh.mutations()
+        self.assertIn("value=i_new_Sprint 1", update)
+
+
+AREAS = [{"name": "Security", "from": "Platform", "color": "RED"}, {"name": "Process", "description": "Work"}]
+
+
+class SetOptionsTests(unittest.TestCase):
+    def test_dry_run_shows_kept_renamed_new_and_removed_options(self) -> None:
+        gh = FakeGh()
+        result = board(gh).set_options({"field": "Area", "options": AREAS})
+        self.assertEqual([(o["id"], o["name"]) for o in result["options"]],
+                         [("o_platform", "Security"), (None, "Process")])
+        self.assertEqual(result["options"][0]["description"], "Old area")
+        self.assertEqual(result["options"][1]["color"], "GRAY")
+        self.assertEqual((result["renamed"], result["removed"], result["removed_in_use"]),
+                         ({"Platform": "Security"}, ["Tooling"], {}))
+        self.assertEqual(gh.bodies, [])
+
+    def test_apply_sends_existing_ids_and_keeps_values(self) -> None:
+        gh = FakeGh()
+        result = board(gh).set_options({"field": "Area", "options": AREAS, "dry_run": False})
+        (body,) = gh.bodies
+        sent = body["variables"]["input"]["singleSelectOptions"]
+        self.assertEqual(sent[0], {"id": "o_platform", "name": "Security", "color": "RED", "description": "Old area"})
+        self.assertNotIn("id", sent[1])
+        self.assertEqual((result["restored"], result["cleared"]), ([], []))
+        self.assertEqual([o["name"] for o in result["options_after"]], ["Security", "Process"])
+
+    def test_values_dropped_by_github_are_set_again_under_the_new_name(self) -> None:
+        gh = FakeGh(keeps_values=False)
+        result = board(gh).set_options({"field": "Area", "options": AREAS, "dry_run": False})
+        self.assertEqual(result["restored"], [{"issue": 12, "value": "Security"}])
+        (update,) = gh.mutations()
+        self.assertIn("value=o_platform", update)
+
+    def test_options_in_use_are_removed_only_when_allowed(self) -> None:
+        replace = [{"name": "Security"}]
+        dry_run = board(FakeGh()).set_options({"field": "Area", "options": replace})
+        self.assertEqual(dry_run["removed_in_use"], {"Platform": [12]})
+        refused = FakeGh()
+        with self.assertRaises(BridgeError) as raised:
+            board(refused).set_options({"field": "Area", "options": replace, "dry_run": False})
+        self.assertIn("{'Platform': [12]}", str(raised.exception))
+        self.assertEqual(refused.bodies, [])
+        gh = FakeGh()
+        result = board(gh).set_options({"field": "Area", "options": replace, "remove_used": True, "dry_run": False})
+        self.assertEqual(result["removed_in_use"], {"Platform": [12]})
+        self.assertEqual(gh.mutations(), [])
+
+    def test_without_ids_in_the_schema_nothing_is_changed(self) -> None:
+        gh = FakeGh(ids_in_schema=False)
+        with self.assertRaises(BridgeError) as raised:
+            board(gh).set_options({"field": "Area", "options": AREAS, "dry_run": False})
+        self.assertIn("nothing was changed", str(raised.exception))
+        self.assertEqual(gh.bodies, [])
+
+    def test_invalid_options_are_refused(self) -> None:
+        payloads: tuple[dict, ...] = (
+            {"field": "Area", "options": []}, {"field": "Area", "options": [{"name": "A", "color": "TEAL"}]},
+            {"field": "Area", "options": [{"name": "A"}, {"name": "A"}]},
+            {"field": "Area", "options": [{"name": "A", "from": "Nope"}]},
+            {"field": "Area", "options": [{"name": "A", "from": "Tooling"}, {"name": "B", "from": "Tooling"}]},
+            {"field": "Area", "options": [{"name": "A", "owner": "x"}]}, {"field": "Area", "options": ["A"]},
+            {"field": "Sprint", "options": [{"name": "A"}]}, {"field": "Area", "options": [{"name": "A"}],
+                                                              "remove_used": "yes"})
+        for payload in payloads:
+            with self.subTest(payload=payload), self.assertRaises(BridgeError):
+                board(FakeGh()).set_options(payload)
+
+    def test_the_operations_are_reachable_through_run(self) -> None:
+        result, passed = run("set-options", {"field": "Area", "options": AREAS}, lambda: board(FakeGh()))
+        self.assertTrue(passed and result["dry_run"])
+        result, _ = run("add-iteration", SPRINT_3, lambda: board(FakeGh()))
+        self.assertEqual(result["add"]["title"], "Sprint 3")
 
 
 if __name__ == "__main__":
