@@ -11,8 +11,8 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import project_hierarchy  # noqa: E402
 from project_hierarchy import (  # noqa: E402
-    DEPENDENCY_PROBLEM, NEEDS_CONTRACT, NEEDS_PARENT, Guard, Issue, Node, chain_problem, closing_numbers,
-    completion_problem, parent_problem, placement_problem, prerequisite_problem,
+    DEPENDENCY_PROBLEM, NEEDS_CONTRACT, NEEDS_PARENT, TYPE_MISMATCH, Guard, Issue, Node, chain_problem,
+    closing_numbers, completion_problem, parent_problem, placement_problem, prerequisite_problem, type_problem,
 )
 from work_contracts import ADOPTED  # noqa: E402
 
@@ -210,6 +210,36 @@ class DependencyRuleTests(unittest.TestCase):
         self.assertIsNone(prerequisite_problem(closed, [[328, 329]]))
 
 
+ALL_TYPES = frozenset({"Epic", "Feature", "Story", "Improvement", "Bug", "Spike", "Task"})
+
+
+def typed(kind: str, issue_type: str | None, state: str = "open", *extra: str) -> Issue:
+    return Issue(30, state, frozenset({f"type:{kind}", *extra}), "completed" if state == "closed" else None,
+                 issue_type=issue_type)
+
+
+class TypeRuleTests(unittest.TestCase):
+    def test_the_type_must_match_the_label(self) -> None:
+        self.assertIsNone(type_problem(typed("epic", "Epic"), ALL_TYPES))
+        self.assertIn("is Task", type_problem(typed("story", "Task"), ALL_TYPES) or "")
+        self.assertIn("is not set. Set the type to Spike", type_problem(typed("spike", None), ALL_TYPES) or "")
+
+    def test_the_rule_waits_until_the_repository_offers_the_type(self) -> None:
+        self.assertIsNone(type_problem(typed("story", None), frozenset({"Task", "Bug", "Feature"})))
+        self.assertIsNotNone(type_problem(typed("task", None), frozenset({"Task", "Bug", "Feature"})))
+
+    def test_closed_and_untyped_or_doubly_typed_items_are_exempt(self) -> None:
+        self.assertIsNone(type_problem(typed("story", None, "closed"), ALL_TYPES))
+        self.assertIsNone(type_problem(Issue(31, "open", frozenset()), ALL_TYPES))
+        self.assertIsNone(type_problem(typed("story", None, "open", "type:task"), ALL_TYPES))
+
+    def test_the_type_is_read_from_rest_and_graphql(self) -> None:
+        rest = Issue.from_api({"number": 1, "state": "open", "labels": [], "type": {"name": "Bug"}})
+        graphql = Issue.from_api({"number": 1, "state": "OPEN", "labels": {"nodes": []}, "issueType": {"name": "Bug"}})
+        untyped = Issue.from_api({"number": 1, "state": "open", "labels": [], "type": None})
+        self.assertEqual((rest.issue_type, graphql.issue_type, untyped.issue_type), ("Bug", "Bug", None))
+
+
 class GuardTests(unittest.TestCase):
     def setUp(self) -> None:
         patcher = mock.patch.object(project_hierarchy, "gh", return_value="")
@@ -264,6 +294,30 @@ class GuardTests(unittest.TestCase):
         self.guard.root = Path(__file__).resolve().parents[2]
         self.guard.check_releases()
         self.assertEqual(self.calls()[1], ("api", "-X", "PATCH", "repos/owner/repo/milestones/1", "-f", "state=open"))
+
+    def test_a_type_mismatch_is_flagged_once_and_cleared_when_fixed(self) -> None:
+        self.guard.available = ALL_TYPES
+        self.guard.check_type(Node(typed("story", "Task")))
+        self.assertEqual(self.calls()[0], ("issue", "edit", "30", "--repo", "owner/repo", "--add-label", TYPE_MISMATCH))
+        self.assertIn("Type rule", self.calls()[1][-1])
+        self.gh.reset_mock()
+        self.guard.check_type(Node(typed("story", "Task", "open", TYPE_MISMATCH)))
+        self.assertEqual(self.calls(), [])
+        self.guard.check_type(Node(typed("story", "Story", "open", TYPE_MISMATCH)))
+        self.assertEqual(self.calls(), [("issue", "edit", "30", "--repo", "owner/repo", "--remove-label", TYPE_MISMATCH)])
+
+    def test_the_available_types_are_read_once_per_run(self) -> None:
+        self.gh.return_value = '[{"name": "Story", "is_enabled": true}, {"name": "Spike", "is_enabled": false}]'
+        self.assertEqual(self.guard.issue_types(), frozenset({"Story"}))
+        self.guard.issue_types()
+        self.assertEqual(self.calls(), [("api", "repos/owner/repo/issue-types")])
+
+    def test_unreadable_issue_types_skip_only_the_type_rule(self) -> None:
+        self.gh.side_effect = project_hierarchy.subprocess.CalledProcessError(1, "gh", stderr="HTTP 404")
+        self.assertEqual(self.guard.issue_types(), frozenset())
+        self.gh.side_effect = None
+        self.guard.check_type(Node(typed("story", None)))
+        self.assertEqual(self.calls(), [("api", "repos/owner/repo/issue-types")])
 
     def test_reopened_child_reopens_its_parent_in_the_same_run(self) -> None:
         task, story = issue(57, "task", "closed"), issue(13, "story", "closed")

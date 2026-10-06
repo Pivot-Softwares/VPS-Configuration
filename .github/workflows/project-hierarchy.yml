@@ -6,6 +6,7 @@ on:
   issues:
     # A reopened or relabeled child can invalidate a completed parent, so every change re-checks the ancestors.
     # A milestone change can split an item from its parent's milestone.
+    # A change of issue type alone is picked up by the schedule: the typed and untyped events are not used here.
     types: [opened, edited, closed, reopened, labeled, unlabeled, milestoned, demilestoned]
   milestone:
     # Closing a release milestone is checked against its release record at once.
@@ -50,6 +51,7 @@ jobs:
           label needs-parent d93f0b "Standalone or misplaced: one type label and a parent of the allowed type"
           label needs-contract c5def5 "Missing part of the issue contract (work management specification section 4)"
           label dependency-problem b60205 "Dependency cycle or canceled prerequisite (specification section 10)"
+          label type-mismatch fbca04 "The issue type doesn't match the type label (specification section 15)"
           label scheduling-violation e99695 "Flagged by the board report (specification section 17)"
       - name: Check parents and completion, and the ancestors of a changed issue
         env:

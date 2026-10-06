@@ -20,6 +20,9 @@ All notable changes to this repository are documented here. The format follows
   `vps-board-operations` (#6).
 - Board bridge operations `add-iteration` and `set-options`, which add a sprint and replace a single-select field's
   options while keeping the ids of existing options and iterations, and set again any item value a change drops (#8).
+- Native issue types: the board bridge's `sync-issue-types` creates the missing organization issue types and sets each
+  issue's type from its label, the hierarchy guard flags a type that doesn't match the label with `type-mismatch`, and
+  each issue form sets its type (#25).
 
 ### Fixed
 

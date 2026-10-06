@@ -11,7 +11,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from board_bridge import (  # noqa: E402
-    ITERATION_CONFIGURATION_INPUT, OPTION_INPUT, Board, BridgeError, Field, parse_changes, run)
+    ITERATION_CONFIGURATION_INPUT, OPTION_INPUT, Board, BridgeError, Field, parse_changes, run, sync_issue_types)
 
 CONFIG = {"organization": {"projectV2": {
     "id": "PVT_1", "title": "VPS Configuration", "url": "https://github.com/orgs/Pivot-Softwares/projects/1",
@@ -405,6 +405,73 @@ class SetOptionsTests(unittest.TestCase):
         self.assertTrue(passed and result["dry_run"])
         result, _ = run("add-iteration", SPRINT_3, lambda: board(FakeGh()))
         self.assertEqual(result["add"]["title"], "Sprint 3")
+
+
+ORG_TYPES = [{"name": "Task", "is_enabled": True}, {"name": "Bug", "is_enabled": True},
+             {"name": "Feature", "is_enabled": False}]
+REPO_ISSUES = [[
+    {"number": 3, "labels": [{"name": "type:epic"}], "type": None},
+    {"number": 8, "labels": [{"name": "type:task"}], "type": {"name": "Task"}},
+    {"number": 21, "labels": [{"name": "type:bug"}, {"name": "needs-parent"}], "type": {"name": "Task"}},
+    {"number": 26, "labels": [], "pull_request": {}},
+], [
+    {"number": 30, "labels": [], "type": None},
+    {"number": 31, "labels": [{"name": "type:story"}, {"name": "type:task"}], "type": None},
+]]
+
+
+class TypesGh(FakeGh):
+    """Adds the issue types and issues REST answers to the fake."""
+
+    def __call__(self, *arguments: str) -> str:
+        if "orgs/Pivot-Softwares/issue-types" in arguments and "-X" not in arguments:
+            self.calls.append(arguments)
+            return json.dumps(ORG_TYPES)
+        if any(argument.startswith("repos/Pivot-Softwares/VPS-Configuration/issues?") for argument in arguments):
+            self.calls.append(arguments)
+            return json.dumps(REPO_ISSUES)
+        if "-X" in arguments:
+            self.calls.append(arguments)
+            return "{}"
+        return super().__call__(*arguments)
+
+    def writes(self) -> list[tuple[str, ...]]:
+        return [call for call in self.calls if "-X" in call]
+
+
+class SyncIssueTypesTests(unittest.TestCase):
+    def test_dry_run_lists_the_types_to_create_and_the_issues_to_set(self) -> None:
+        gh = TypesGh()
+        result = sync_issue_types(board(gh), {})
+        self.assertEqual(result["types_to_create"], ["Epic", "Story", "Improvement", "Spike"])
+        self.assertEqual(result["types_disabled"], ["Feature"])
+        self.assertEqual(result["changes"], [{"issue": 3, "from": None, "to": "Epic", "result": "would set"},
+                                             {"issue": 21, "from": "Task", "to": "Bug", "result": "would set"}])
+        self.assertEqual(result["skipped"], [{"issue": 30, "type_labels": []},
+                                             {"issue": 31, "type_labels": ["type:story", "type:task"]}])
+        self.assertEqual(gh.writes(), [])
+
+    def test_apply_creates_only_missing_types_then_sets_the_types(self) -> None:
+        gh = TypesGh()
+        result = sync_issue_types(board(gh), {"dry_run": False})
+        self.assertEqual(result["types_created"], ["Epic", "Story", "Improvement", "Spike"])
+        creates = [call for call in gh.writes() if "POST" in call]
+        self.assertEqual([call[call.index("-f") + 1] for call in creates],
+                         ["name=Epic", "name=Story", "name=Improvement", "name=Spike"])
+        self.assertTrue(all("is_enabled=true" in call for call in creates))
+        patches = [call for call in gh.writes() if "PATCH" in call]
+        self.assertEqual([(call[3], call[-1]) for call in patches],
+                         [("repos/Pivot-Softwares/VPS-Configuration/issues/3", "type=Epic"),
+                          ("repos/Pivot-Softwares/VPS-Configuration/issues/21", "type=Bug")])
+
+    def test_unknown_payload_keys_are_refused(self) -> None:
+        for payload in ({"issues": [3]}, {"dry_run": "no"}):
+            with self.subTest(payload=payload), self.assertRaises(BridgeError):
+                sync_issue_types(board(TypesGh()), payload)
+
+    def test_the_operation_is_reachable_through_run(self) -> None:
+        result, passed = run("sync-issue-types", {}, lambda: board(TypesGh()))
+        self.assertTrue(passed and result["dry_run"])
 
 
 if __name__ == "__main__":

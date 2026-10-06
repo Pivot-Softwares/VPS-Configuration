@@ -19,6 +19,8 @@ Operations (environment OPERATION, payload in PAYLOAD):
                                                      makes the listed options the field's options, keeping the ids of
                                                      options kept or renamed ("from"); "remove_used": true allows
                                                      removing options that items still use
+  sync-issue-types {"dry_run": true}                 creates the missing organization issue types, then sets each
+                                                     issue's type from its one type label
 
 Values are option names, iteration titles, numbers, ISO dates, text, or null to clear. An iteration title resolves to
 the current or a future iteration first; a title shared by two current or future iterations, or only by completed
@@ -43,7 +45,8 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-OPERATIONS = ("dump-config", "read-items", "preflight", "report", "set-fields", "add-iteration", "set-options")
+OPERATIONS = ("dump-config", "read-items", "preflight", "report", "set-fields", "add-iteration", "set-options",
+              "sync-issue-types")
 BEGIN, END = "BOARD-RESULT-BEGIN", "BOARD-RESULT-END"
 MAX_CHANGES = 200
 
@@ -81,6 +84,16 @@ OPTION_INPUT = "ProjectV2SingleSelectFieldOptionInput"
 ITERATION_CONFIGURATION_INPUT = "ProjectV2IterationFieldConfigurationInput"
 COLORS = ("GRAY", "BLUE", "GREEN", "YELLOW", "ORANGE", "RED", "PINK", "PURPLE")
 MAX_OPTIONS = 50
+# The organization issue types the type labels need, with the description and color each is created with.
+TYPE_DETAILS = {
+    "Epic": ("Broad objective delivered through features (work management specification section 3)", "purple"),
+    "Feature": ("Coherent capability delivered through stories, improvements, bugs or spikes", "blue"),
+    "Story": ("New capability a user needs, with acceptance criteria", "green"),
+    "Improvement": ("Existing behavior that meets its specification but should become better", "yellow"),
+    "Bug": ("Actual behavior contradicts agreed expected behavior", "red"),
+    "Spike": ("Timeboxed investigation that answers a question before a decision", "orange"),
+    "Task": ("Bounded execution step under a story, improvement, bug or spike", "gray"),
+}
 # Field data type -> (GraphQL variable type, value key, gh flag: -f sends a string, -F a number).
 SETTERS = {
     "SINGLE_SELECT": ("String!", "singleSelectOptionId", "-f"),
@@ -484,6 +497,46 @@ class Board:
         return result
 
 
+def sync_issue_types(board: Board, payload: dict) -> dict:
+    """Creates the missing organization issue types, then gives each issue the type of its one type label.
+
+    Existing types are never changed or deleted: a disabled one is reported for the owner to enable. Issues without
+    exactly one type label are left to the hierarchy guard's parent rule.
+    """
+    from work_contracts import ISSUE_TYPES
+
+    check_keys(payload, set(), {"dry_run"})
+    dry_run = dry_run_flag(payload)
+    existing = {kind["name"]: kind for kind in json.loads(board.gh("api", f"orgs/{board.org}/issue-types"))}
+    created, disabled = [], sorted(name for name in TYPE_DETAILS
+                                   if name in existing and existing[name].get("is_enabled") is False)
+    for name, (description, color) in TYPE_DETAILS.items():
+        if name in existing:
+            continue
+        if not dry_run:
+            board.gh("api", "-X", "POST", f"orgs/{board.org}/issue-types", "-f", f"name={name}",
+                     "-F", "is_enabled=true", "-f", f"description={description}", "-f", f"color={color}")
+        created.append(name)
+    pages = json.loads(board.gh("api", "--paginate", "--slurp", f"repos/{board.repository}/issues?state=all&per_page=100"))
+    changes, skipped = [], []
+    for issue in sorted((issue for page in pages for issue in page if "pull_request" not in issue),
+                        key=lambda issue: issue["number"]):
+        kinds = sorted(label["name"] for label in issue["labels"] if label["name"] in ISSUE_TYPES)
+        if len(kinds) != 1:
+            skipped.append({"issue": issue["number"], "type_labels": kinds})
+            continue
+        wanted, current = ISSUE_TYPES[kinds[0]], (issue.get("type") or {}).get("name")
+        if current == wanted:
+            continue
+        if not dry_run:
+            board.gh("api", "-X", "PATCH", f"repos/{board.repository}/issues/{issue['number']}", "-f", f"type={wanted}")
+        changes.append({"issue": issue["number"], "from": current, "to": wanted,
+                        "result": "would set" if dry_run else "set"})
+    return {"dry_run": dry_run, "types_created": created if not dry_run else [],
+            "types_to_create": created if dry_run else [], "types_disabled": disabled,
+            "changes": changes, "skipped": skipped}
+
+
 def gate(operation: str, payload: dict) -> tuple[dict, bool]:
     """Runs work_gate's preflight or report and returns its printed findings."""
     import work_gate
@@ -523,6 +576,8 @@ def run(operation: str, payload: dict, board_factory: Callable[[], Board]) -> tu
         return board.add_iteration(payload), True
     if operation == "set-options":
         return board.set_options(payload), True
+    if operation == "sync-issue-types":
+        return sync_issue_types(board, payload), True
     os.environ["BOARD_PROJECT_ID"] = board.project["id"]
     return gate(operation, payload)
 

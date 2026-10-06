@@ -14,6 +14,10 @@ from datetime import datetime, timezone
 
 EPIC, FEATURE, STORY, IMPROVEMENT, BUG, SPIKE, TASK = (
     "type:epic", "type:feature", "type:story", "type:improvement", "type:bug", "type:spike", "type:task")
+# The organization issue type that matches each type label (specification section 15): the label stays the source the
+# rules read, and the native type mirrors it for the board's Type column.
+ISSUE_TYPES = {EPIC: "Epic", FEATURE: "Feature", STORY: "Story", IMPROVEMENT: "Improvement", BUG: "Bug",
+               SPIKE: "Spike", TASK: "Task"}
 
 # VPS-Configuration adopted the specification on 2026-10-06 (A12), before its first work item, so every item
 # meets the contract.

@@ -10,7 +10,7 @@ on:
         description: Operation
         type: choice
         required: true
-        options: [dump-config, read-items, preflight, report, set-fields, add-iteration, set-options]
+        options: [dump-config, read-items, preflight, report, set-fields, add-iteration, set-options, sync-issue-types]
       payload:
         description: JSON payload (see scripts/board_bridge.py)
         type: string
@@ -40,6 +40,7 @@ jobs:
       # ⚠️ Credential: the App's private key (environment secret) becomes an installation token that expires after one
       # hour and is revoked when the job ends. Only the permissions the bridge needs are requested.
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        if: inputs.operation != 'sync-issue-types'
         id: app
         with:
           client-id: ${{ vars.BOARD_APP_CLIENT_ID }}
@@ -48,9 +49,19 @@ jobs:
           permission-issues: write
           permission-pull-requests: read
           permission-organization-projects: write
+      # ⚠️ Same credential. The action has no input for the organization's Issue types permission, so this token lists
+      # no permissions and gets exactly what the installation grants: Issues write, Pull requests read, organization
+      # Projects write, Issue types write and Metadata read. Only sync-issue-types uses it.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        if: inputs.operation == 'sync-issue-types'
+        id: types
+        with:
+          client-id: ${{ vars.BOARD_APP_CLIENT_ID }}
+          private-key: ${{ secrets.BOARD_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
       - name: Run the operation
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_TOKEN: ${{ steps.app.outputs.token || steps.types.outputs.token }}
           BOARD_ORG: ${{ github.repository_owner }}
           BOARD_PROJECT_NUMBER: '1'
           BOARD_REPOSITORY: ${{ github.repository }}
