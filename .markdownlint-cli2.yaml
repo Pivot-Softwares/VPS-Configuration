@@ -1,0 +1,22 @@
+config:
+  default: true
+  MD013:
+    line_length: 120
+    code_blocks: false
+    tables: false
+  MD024:
+    siblings_only: true
+  # The ADR template (docs-adr skill) uses bold **Positive** / **Negative** labels under Consequences.
+  MD036: false
+  MD033:
+    allowed_elements: [br, details, summary, sub, sup]
+  MD041: true
+  MD046:
+    style: fenced
+globs:
+  - "**/*.md"
+ignores:
+  - "node_modules"
+  # Agent skill instructions, not published documentation (imported house standards, long lines by design).
+  - ".agents/**"
+  - ".claude/**"
