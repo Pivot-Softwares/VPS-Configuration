@@ -38,9 +38,15 @@ GitHub GraphQL is blocked. Project fields therefore go through the **board bridg
 | `preflight` | `{"task": 12}` | PASS or FAIL for each of the seven gate conditions (spec §8), with the correction; the job fails on any FAIL. |
 | `report` | `{"apply_labels": true}` | The board report of `work-board-configuration-and-validation`; keeps `scheduling-violation` current. |
 | `set-fields` | `{"dry_run": true, "changes": [{"issue": 12, "field": "Status", "value": "In Progress"}]}` | Each change, `skipped` when already set; adds an issue to the Project first if needed. Values are option names, iteration titles, numbers, ISO dates or `null` to clear. |
+| `add-iteration` | `{"dry_run": true, "field": "Sprint", "title": "Sprint 3", "start_date": "2026-11-03"}` (`duration` in days defaults to the field's) | The iteration to add and those kept with their ids; after applying, `restored` and `cleared` item values and the iterations read back. |
+| `set-options` | `{"dry_run": true, "field": "Area", "options": [{"name": "Security", "from": "Platform", "color": "RED", "description": "..."}]}` | The final options with the ids kept, `renamed`, `removed` and `removed_in_use`; after applying, `restored`, `cleared` and the options read back. |
 
-- **Dry run first** for every `set-fields` call that changes more than one item, then apply with `"dry_run": false` and
-  read back with `read-items`.
+- **Dry run first** for every `set-fields` call that changes more than one item, and for every `add-iteration` and
+  `set-options` call, then apply with `"dry_run": false` and read back with `read-items` or `dump-config`.
+- **Field options:** list every option to keep. An option left out is removed, so rename with `"from"` instead of
+  removing and adding, and never pass `"remove_used": true` without the owner's decision on the items it clears.
+- **Iteration titles** resolve to the current or a future iteration first; a title two iterations share is refused.
+  Rename one in the Project's settings rather than working around it.
 - Until the bridge is on `main`, no Project field can be changed from a session. Say so and give the owner the exact
   values to set in the browser instead.
 
@@ -131,6 +137,7 @@ short Python script in the scratchpad that is safe to rerun.
 | --- | --- |
 | `read-items` returned `{}` while `set-fields` wrote values the owner could see (#21): GitHub hides an item's issue from a GitHub App whose installation can't access its repository, and the readers skipped such items silently. | Both readers now stop with the hidden-item count and the fix (give the installation access to the repository). Never treat an unreadable item as absent. |
 | The Project's **Auto-add to project** rule didn't add the first issues. | `set-fields` adds a missing issue itself; check new items with `read-items`. |
+| The copied Sprint field held RaidManager's completed iterations, one titled like the new `Sprint 1`, and the lookup by title could pick the completed one (#7). | Titles resolve to current or future iterations first and shared titles are refused; sprints are added with `add-iteration`. |
 
 ## Pitfalls inherited from RaidManager
 

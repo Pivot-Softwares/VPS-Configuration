@@ -10,7 +10,7 @@ on:
         description: Operation
         type: choice
         required: true
-        options: [dump-config, read-items, preflight, report, set-fields]
+        options: [dump-config, read-items, preflight, report, set-fields, add-iteration, set-options]
       payload:
         description: JSON payload (see scripts/board_bridge.py)
         type: string
