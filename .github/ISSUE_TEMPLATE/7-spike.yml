@@ -1,0 +1,72 @@
+name: Spike
+description: "Timeboxed research that answers a question, under a feature, done through its tasks."
+title: "Spike: "
+labels: ["type:spike"]
+body:
+  - type: markdown
+    attributes:
+      value: "Work items follow the Work Management and Delivery Specification (docs/reference/work-management-specification.md, ADR-0001): Epic → Feature → User Story, Improvement, Bug or Spike → Task, and nothing is standalone. Classify by intent first, then scope (section 3). Choose a spike when an unanswered question prevents an informed decision or reliable plan. Its parent is a feature. After creating this issue, add it as a sub-issue of its parent at once. Answer every field; write `Unknown: needs clarification` for what isn't known yet, and such an item stays in Backlog until it is clarified (section 4)."
+  - type: input
+    id: parent
+    attributes:
+      label: Parent
+      description: "The feature this spike belongs to, for example #2."
+      placeholder: "#"
+    validations:
+      required: true
+  - type: textarea
+    id: purpose
+    attributes:
+      label: Purpose
+      description: "Which decision or plan this research unblocks."
+    validations:
+      required: true
+  - type: textarea
+    id: research-question
+    attributes:
+      label: Research question
+      description: "The specific question to answer."
+    validations:
+      required: true
+  - type: input
+    id: timebox
+    attributes:
+      label: Timebox
+      description: "The fixed time the spike may take, for example 2 days."
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: "What is investigated and what isn't."
+    validations:
+      required: true
+  - type: textarea
+    id: exit-criteria
+    attributes:
+      label: Exit criteria
+      description: "What ends the spike: an answer, or an explanation of the remaining uncertainty."
+    validations:
+      required: true
+  - type: textarea
+    id: findings-or-decision-deliverable
+    attributes:
+      label: Findings or decision deliverable
+      description: "Where the findings, evidence and recommendation will be recorded."
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: "Prerequisites as #N (also linked as blocked-by), or None. Parents are not dependencies."
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: "How the findings are reviewed and accepted."
+    validations:
+      required: true

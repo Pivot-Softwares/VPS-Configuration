@@ -1,0 +1,59 @@
+name: board
+
+# The board bridge (specification section 22, A11; skill vps-board-operations): the agent works from cloud sessions,
+# where GitHub GraphQL is blocked, so it starts this workflow to read and write the organization Project's fields.
+# It runs only from main, in the board environment, with a one-hour token of the pivot-board-bridge GitHub App.
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Operation
+        type: choice
+        required: true
+        options: [dump-config, read-items, preflight, report, set-fields]
+      payload:
+        description: JSON payload (see scripts/board_bridge.py)
+        type: string
+        required: false
+        default: '{}'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: board
+  cancel-in-progress: false
+
+jobs:
+  board:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: board
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      # ⚠️ Credential: the App's private key (environment secret) becomes an installation token that expires after one
+      # hour and is revoked when the job ends. Only the permissions the bridge needs are requested.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app
+        with:
+          client-id: ${{ vars.BOARD_APP_CLIENT_ID }}
+          private-key: ${{ secrets.BOARD_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-issues: write
+          permission-pull-requests: read
+          permission-organization-projects: write
+      - name: Run the operation
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          BOARD_ORG: ${{ github.repository_owner }}
+          BOARD_PROJECT_NUMBER: '1'
+          BOARD_REPOSITORY: ${{ github.repository }}
+          OPERATION: ${{ inputs.operation }}
+          PAYLOAD: ${{ inputs.payload }}
+        run: python scripts/board_bridge.py

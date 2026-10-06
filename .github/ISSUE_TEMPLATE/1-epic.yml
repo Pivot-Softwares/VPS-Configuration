@@ -1,0 +1,43 @@
+name: Epic
+description: "A broad objective that requires several features."
+title: "Epic: "
+labels: ["type:epic"]
+body:
+  - type: markdown
+    attributes:
+      value: "Work items follow the Work Management and Delivery Specification (docs/reference/work-management-specification.md, ADR-0001): Epic → Feature → User Story, Improvement, Bug or Spike → Task, and nothing is standalone. Classify by intent first, then scope (section 3). Choose an epic when a broad product or engineering objective requires several Features. It has no parent. After creating this issue, add it as a sub-issue of its parent at once. Answer every field; write `Unknown: needs clarification` for what isn't known yet, and such an item stays in Backlog until it is clarified (section 4)."
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: "The broad product or engineering objective."
+    validations:
+      required: true
+  - type: textarea
+    id: success-measures
+    attributes:
+      label: Success measures
+      description: "Measurable conditions that show the objective is achieved."
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: "Boundaries: what is in and out of this objective."
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: "Prerequisites as #N (also linked as blocked-by), or None. Parents are not dependencies."
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: "How the success measures are checked."
+    validations:
+      required: true

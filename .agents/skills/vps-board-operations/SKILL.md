@@ -18,10 +18,11 @@ GitHub GraphQL is blocked. Project fields therefore go through the **board bridg
 ## The board bridge
 
 > ⚠️ **Credential:** the `pivot-board-bridge` GitHub App's private key, stored only as the secret
-> `BOARD_APP_PRIVATE_KEY` of the `board` environment (deployments from `main` only), with the App id in the variable
-> `BOARD_APP_ID`. It never expires and needs no rotation; each run exchanges it for an installation token that expires
-> after one hour. The App is installed on this repository only, with Issues read and write, Metadata read and
-> organization Projects read and write (`credentials-policy`).
+> `BOARD_APP_PRIVATE_KEY` of the `board` environment (deployments from `main` only), with the App's client id in the variable
+> `BOARD_APP_CLIENT_ID`. It never expires and needs no rotation; each run exchanges it for an installation token that expires
+> after one hour. The App is installed on this repository only, with Issues read and write, Pull requests read,
+> Metadata read and organization Projects read and write (`credentials-policy`,
+> `docs/reference/project-automation.md`).
 
 - **Workflow:** `.github/workflows/board.yml`, started by `workflow_dispatch` on `main`. Start it with the GitHub
   tools (`actions_run_trigger`, method `run_workflow`, workflow `board.yml`, ref `main`) and read its result from the
@@ -45,8 +46,9 @@ GitHub GraphQL is blocked. Project fields therefore go through the **board bridg
 
 ## Ids
 
-Organization `Pivot-Softwares`, repository `Pivot-Softwares/VPS-Configuration`, Project: **not recorded yet** (the
-owner's copy of the Raid Manager Project). Fill this table from the first `dump-config` and keep it current; re-read
+Organization `Pivot-Softwares`, repository `Pivot-Softwares/VPS-Configuration`, Project 1
+([VPS Configuration](https://github.com/orgs/Pivot-Softwares/projects/1), the owner's copy of the Raid Manager
+Project). Fill this table from the first `dump-config` and keep it current; re-read
 it if a call fails with an unknown id. The bridge works by names, so the ids here are for checking, not for typing.
 
 | Field | Field id | Values (option or iteration id) |

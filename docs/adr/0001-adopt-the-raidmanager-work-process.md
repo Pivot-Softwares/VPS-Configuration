@@ -55,8 +55,11 @@ We adopt RaidManager's work process for `Pivot-Softwares/VPS-Configuration`, wit
 - **Pivot.Framework (decision G):** its packages move to a free, public feed that needs no credential to read, if they
   can be public, so RaidManager stops needing a personal token.
 - **People:** the owner `@AnnabiGihed` is the operator; `@anthermook` is the peer reviewer.
-- **Bootstrap (decision E):** the first version of the skills is delivered without a work item; later changes to them
-  need one.
+- **Bootstrap (decision E, extended the same day):** the first version of the skills, then the board foundation (the
+  board bridge, the issue forms, the type and rule labels and the hierarchy guard), are delivered without work items;
+  the first epic, feature and story are created right after and link these pull requests as history. Later changes
+  need their work items.
+- **Sprint 1** runs from 2026-10-06 00:00 to 2026-10-20 00:00 Europe/Brussels.
 - **Decisions and documentation:** the agent never decides; it gives options with a recommendation. Every
   configuration is documented in `docs/` with why it was chosen, its pros and cons, and how it was done. The agent has
   no access to the VPS; the owner runs every step on it, one at a time. Automation is preferred to manual steps.

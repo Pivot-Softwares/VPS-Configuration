@@ -1,0 +1,65 @@
+name: Improvement
+description: "A verifiable enhancement to something that meets its specification, under a feature."
+title: "Improvement: "
+labels: ["type:improvement"]
+body:
+  - type: markdown
+    attributes:
+      value: "Work items follow the Work Management and Delivery Specification (docs/reference/work-management-specification.md, ADR-0001): Epic → Feature → User Story, Improvement, Bug or Spike → Task, and nothing is standalone. Classify by intent first, then scope (section 3). Choose an improvement when existing behavior meets its specification but should become better. Its parent is a feature. After creating this issue, add it as a sub-issue of its parent at once. Answer every field; write `Unknown: needs clarification` for what isn't known yet, and such an item stays in Backlog until it is clarified (section 4)."
+  - type: input
+    id: parent
+    attributes:
+      label: Parent
+      description: "The feature this improvement belongs to, for example #2."
+      placeholder: "#"
+    validations:
+      required: true
+  - type: textarea
+    id: purpose
+    attributes:
+      label: Purpose
+      description: "Why the enhancement is worth making."
+    validations:
+      required: true
+  - type: textarea
+    id: current-situation
+    attributes:
+      label: Current situation
+      description: "What exists today and works as specified."
+    validations:
+      required: true
+  - type: textarea
+    id: desired-enhancement
+    attributes:
+      label: Desired enhancement
+      description: "What should become better: quality, usability, performance, tooling, documentation or process."
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: "What is in and out of this improvement."
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: "Verifiable conditions that show the enhancement."
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: "Prerequisites as #N (also linked as blocked-by), or None. Parents are not dependencies."
+    validations:
+      required: true
+  - type: textarea
+    id: verification-method
+    attributes:
+      label: Verification method
+      description: "How the enhancement is measured or demonstrated."
+    validations:
+      required: true

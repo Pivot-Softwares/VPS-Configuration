@@ -1,0 +1,65 @@
+name: project-hierarchy
+
+# The hierarchy guard, ported from AnnabiGihed/RaidManager without its mockup rule (specification sections 2, 4, 10,
+# 13 and 15; ADR-0001). It runs with the built-in token; rules that need Project fields run in the board bridge.
+on:
+  issues:
+    # A reopened or relabeled child can invalidate a completed parent, so every change re-checks the ancestors.
+    # A milestone change can split an item from its parent's milestone.
+    types: [opened, edited, closed, reopened, labeled, unlabeled, milestoned, demilestoned]
+  milestone:
+    # Closing a release milestone is checked against its release record at once.
+    types: [closed]
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+
+# Runs one at a time, so two events never reopen the same parent twice.
+concurrency:
+  group: project-hierarchy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  hierarchy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Ensure the type and rule labels exist
+        run: |
+          label() { gh label create "$1" --repo "$GITHUB_REPOSITORY" --color "$2" --force --description "$3"; }
+          label type:epic 3e4b9e "Broad objective delivered through features (work management specification section 3)"
+          label type:feature 5319e7 "Coherent capability delivered through stories, improvements, bugs or spikes"
+          label type:story 0e8a16 "New capability a user needs, with acceptance criteria"
+          label type:improvement a2eeef "Existing behavior that meets its specification but should become better"
+          label type:bug d73a4a "Actual behavior contradicts agreed expected behavior"
+          label type:spike fbca04 "Timeboxed investigation that answers a question before a decision"
+          label type:task c5def5 "Bounded execution step under a story, improvement, bug or spike"
+          label needs-parent d93f0b "Standalone or misplaced: one type label and a parent of the allowed type"
+          label needs-contract c5def5 "Missing part of the issue contract (work management specification section 4)"
+          label dependency-problem b60205 "Dependency cycle or canceled prerequisite (specification section 10)"
+          label scheduling-violation e99695 "Flagged by the board report (specification section 17)"
+      - name: Check parents and completion, and the ancestors of a changed issue
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          if [ "$EVENT_NAME" = milestone ]; then
+            python scripts/project_hierarchy.py --repository "$GITHUB_REPOSITORY" --releases
+          elif [ "$EVENT_NAME" = issues ]; then
+            python scripts/project_hierarchy.py --repository "$GITHUB_REPOSITORY" --issue "$ISSUE_NUMBER"
+          else
+            python scripts/project_hierarchy.py --repository "$GITHUB_REPOSITORY"
+          fi

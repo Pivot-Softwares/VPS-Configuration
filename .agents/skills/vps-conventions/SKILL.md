@@ -60,7 +60,8 @@ Precedence, highest first:
 | Question | State |
 | --- | --- |
 | Repository visibility: public (recommended) or private on the Free organization plan, which loses branch protection, Pages and wiki | Open |
-| Sprint 1 dates and the first release's target date | Open |
+| Sprint 1 dates | Settled: 2026-10-06 to 2026-10-20 (ADR-0001) |
+| The first release: goal, scope and target date | Open |
 | Every technical choice the plan contains (operating system, reverse proxy, monitoring, backups, deployment method) | Each one is a decision record with options (`decision-options`) |
 
 When one of these is settled, record the decision (§8) and update this table in the same pull request.
@@ -77,8 +78,8 @@ and `vps-github-project-workflow` the branch, pull request and review mechanics.
 - A branch, commit and pull request always carry a **task** number.
 - Tooling, documentation and process work belongs under the epic **Engineering platform and delivery** once the owner
   approves creating it. Never create an epic without the owner's approval.
-- **Bootstrap exception (owner decision E, ADR-0001):** the first version of the skills was delivered without a work
-  item. Every later change to a skill needs its work item.
+- **Bootstrap exception (owner decision E, ADR-0001):** the first version of the skills and the board foundation were
+  delivered without work items. Every later change needs its work item.
 
 ## 6. Readiness preconditions for this repository
 

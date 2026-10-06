@@ -1,0 +1,58 @@
+name: Feature
+description: "A coherent capability under an epic, delivered through several outcomes."
+title: "Feature: "
+labels: ["type:feature"]
+body:
+  - type: markdown
+    attributes:
+      value: "Work items follow the Work Management and Delivery Specification (docs/reference/work-management-specification.md, ADR-0001): Epic → Feature → User Story, Improvement, Bug or Spike → Task, and nothing is standalone. Classify by intent first, then scope (section 3). Choose a feature when a coherent capability requires several independently verifiable outcomes. Its parent is an epic. After creating this issue, add it as a sub-issue of its parent at once. Answer every field; write `Unknown: needs clarification` for what isn't known yet, and such an item stays in Backlog until it is clarified (section 4)."
+  - type: input
+    id: parent
+    attributes:
+      label: Parent
+      description: "The epic this feature belongs to, for example #1."
+      placeholder: "#"
+    validations:
+      required: true
+  - type: textarea
+    id: purpose
+    attributes:
+      label: Purpose
+      description: "Why this capability is needed."
+    validations:
+      required: true
+  - type: textarea
+    id: capability-boundaries
+    attributes:
+      label: Capability boundaries
+      description: "What the capability covers and what it doesn't."
+    validations:
+      required: true
+  - type: textarea
+    id: expected-outcomes
+    attributes:
+      label: Expected outcomes
+      description: "The independently verifiable outcomes its children deliver."
+    validations:
+      required: true
+  - type: textarea
+    id: completion-conditions
+    attributes:
+      label: Completion conditions
+      description: "When the capability counts as delivered and accepted."
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: "Prerequisites as #N (also linked as blocked-by), or None. Parents are not dependencies."
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: "How the capability is accepted."
+    validations:
+      required: true
