@@ -35,6 +35,16 @@ def item(number: int, kind: str, **values: object) -> Item:
     return Item(number, **defaults)  # type: ignore[arg-type]
 
 
+class HiddenItemTests(unittest.TestCase):
+    def test_a_hidden_item_makes_eligibility_unknown(self) -> None:
+        for node in ({"type": "REDACTED", "content": None}, {"type": "ISSUE", "content": {}}):
+            with self.subTest(node=node), self.assertRaises(SystemExit):
+                item_from_api(node)
+
+    def test_a_draft_is_skipped(self) -> None:
+        self.assertIsNone(item_from_api({"type": "DRAFT_ISSUE", "content": {}}))
+
+
 class SprintTests(unittest.TestCase):
     def test_boundaries_are_brussels_midnight_with_an_exclusive_end(self) -> None:
         self.assertTrue(SPRINT_1.active(datetime(2026, 10, 1, 22, 0, tzinfo=timezone.utc)))

@@ -122,6 +122,13 @@ short Python script in the scratchpad that is safe to rerun.
 3. Apply, skipping values already set, so a rerun after a failure is safe.
 4. **Read back** and post the read-back on the item that asked for the change.
 
+## Pitfalls met here
+
+| Pitfall | Fix |
+| --- | --- |
+| `read-items` returned `{}` while `set-fields` wrote values the owner could see (#21): GitHub hides an item's issue from a GitHub App whose installation can't access its repository, and the readers skipped such items silently. | Both readers now stop with the hidden-item count and the fix (give the installation access to the repository). Never treat an unreadable item as absent. |
+| The Project's **Auto-add to project** rule didn't add the first issues. | `set-fields` adds a missing issue itself; check new items with `read-items`. |
+
 ## Pitfalls inherited from RaidManager
 
 | Pitfall | Fix |

@@ -28,21 +28,24 @@ CONFIG = {"organization": {"projectV2": {
                          "filter": "is:open"}]},
 }}}
 ITEMS = {"node": {"items": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": [
-    {"id": "PVTI_12", "content": {"number": 12}, "fieldValues": {"nodes": [
+    {"id": "PVTI_12", "type": "ISSUE", "content": {"__typename": "Issue", "number": 12}, "fieldValues": {"nodes": [
         {"name": "Backlog", "field": {"name": "Status"}},
         {"number": 3.0, "field": {"name": "Story Points"}},
         {"text": "Task: one", "field": {"name": "Title"}},
         {},
     ]}},
-    {"id": "PVTI_DRAFT", "content": {}, "fieldValues": {"nodes": []}},
+    {"id": "PVTI_DRAFT", "type": "DRAFT_ISSUE", "content": {"__typename": "DraftIssue"},
+     "fieldValues": {"nodes": []}},
 ]}}}
 
 
 class FakeGh:
     """Answers the bridge's gh calls from fixtures and records every call."""
 
-    def __init__(self) -> None:
+    def __init__(self, items: dict | None = None, errors: list | None = None) -> None:
         self.calls: list[tuple[str, ...]] = []
+        self.item_page = items or ITEMS
+        self.errors = errors
 
     def __call__(self, *arguments: str) -> str:
         self.calls.append(arguments)
@@ -52,7 +55,7 @@ class FakeGh:
         if "organization(login" in query:
             return json.dumps({"data": CONFIG})
         if "items(first" in query:
-            return json.dumps({"data": ITEMS})
+            return json.dumps({"data": self.item_page, **({"errors": self.errors} if self.errors else {})})
         if "addProjectV2ItemById" in query:
             return json.dumps({"data": {"addProjectV2ItemById": {"item": {"id": "PVTI_13"}}}})
         return json.dumps({"data": {}})
@@ -114,6 +117,28 @@ class BoardTests(unittest.TestCase):
         self.assertEqual(list(items), [12])
         self.assertEqual(items[12]["fields"], {"Status": "Backlog", "Story Points": 3.0, "Title": "Task: one"})
 
+    def test_hidden_items_stop_the_read_instead_of_disappearing(self) -> None:
+        issue_12 = {"id": "PVTI_12", "type": "ISSUE", "content": {"number": 12}, "fieldValues": {"nodes": []}}
+        hidden = {"node": {"items": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": [
+            issue_12,
+            {"id": "PVTI_5", "type": "REDACTED", "content": None, "fieldValues": {"nodes": []}},
+            {"id": "PVTI_7", "type": "ISSUE", "content": {}, "fieldValues": {"nodes": []}},
+        ]}}}
+        with self.assertRaises(BridgeError) as raised:
+            board(FakeGh(items=hidden)).items()
+        message = str(raised.exception)
+        self.assertIn("2 of 3 Project items are hidden", message)
+        self.assertIn("Pivot-Softwares/VPS-Configuration", message)
+
+    def test_graphql_errors_are_reported(self) -> None:
+        with self.assertRaises(BridgeError) as raised:
+            board(FakeGh(errors=[{"message": "Resource not accessible by integration"}])).items()
+        self.assertIn("Resource not accessible by integration", str(raised.exception))
+
+    def test_read_items_reports_the_item_types(self) -> None:
+        result, _ = run("read-items", {}, lambda: board(FakeGh()))
+        self.assertEqual(result["item_types"], {"ISSUE": 1, "DRAFT_ISSUE": 1})
+
     def test_dry_run_writes_nothing(self) -> None:
         gh = FakeGh()
         result = board(gh).set_fields({"changes": [{"issue": 12, "field": "Status", "value": "Ready"}]})
@@ -164,7 +189,7 @@ class RunTests(unittest.TestCase):
         self.assertTrue(passed)
         self.assertEqual(config["project"]["id"], "PVT_1")
         items, _ = run("read-items", {"issues": [99]}, lambda: board(FakeGh()))
-        self.assertEqual(items, {"items": {}})
+        self.assertEqual(items["items"], {})
 
 
 if __name__ == "__main__":

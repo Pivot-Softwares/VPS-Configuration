@@ -80,6 +80,10 @@ and `vps-github-project-workflow` the branch, pull request and review mechanics.
   approves creating it. Never create an epic without the owner's approval.
 - **Bootstrap exception (owner decision E, ADR-0001):** the first version of the skills and the board foundation were
   delivered without work items. Every later change needs its work item.
+- **Board bugs come first (standing owner decision on #21, 2026-10-06):** a bug in the board, the board bridge, the
+  guard or the gate has Priority P0 Critical. When it blocks work, including the gate itself, its task starts under a
+  **recorded exception**: check the gate's seven conditions by hand from the issue data and the last field writes,
+  post the table on the task (as on #22), then go back to the real gate once the bug is fixed.
 
 ## 6. Readiness preconditions for this repository
 

@@ -46,7 +46,7 @@ CONFIG_QUERY = """query($org: String!, $number: Int!) { organization(login: $org
 
 ITEMS_QUERY = """query($project: ID!, $cursor: String) { node(id: $project) { ... on ProjectV2 {
   items(first: 100, after: $cursor) { pageInfo { hasNextPage endCursor } nodes { id
-    content { ... on Issue { number } }
+    type content { __typename ... on Issue { number repository { nameWithOwner } } }
     fieldValues(first: 30) { nodes {
       ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2FieldCommon { name } } }
       ... on ProjectV2ItemFieldIterationValue { title field { ... on ProjectV2FieldCommon { name } } }
@@ -172,6 +172,7 @@ class Board:
         if project is None:
             raise BridgeError(f"Project {number} of {org} is not visible to the bridge's App.")
         self.project = project
+        self.diagnostics: dict[str, int] = {}
         self.fields = {field.name: field for node in project["fields"]["nodes"]
                        if (field := Field.from_api(node)) is not None}
 
@@ -179,15 +180,25 @@ class Board:
         arguments = ["api", "graphql", "-f", f"query={query}"]
         for name, value in variables.items():
             arguments += ["-F" if isinstance(value, int) else "-f", f"{name}={value}"]
-        return json.loads(self.gh(*arguments))["data"]
+        response = json.loads(self.gh(*arguments))
+        if response.get("errors"):
+            messages = "; ".join(error.get("message", str(error)) for error in response["errors"])
+            raise BridgeError(f"GitHub answered with errors: {messages}")
+        return response["data"]
 
     def config(self) -> dict:
         return {"project": {key: self.project[key] for key in ("id", "title", "url")},
                 "fields": self.project["fields"]["nodes"], "views": self.project["views"]["nodes"]}
 
     def items(self) -> dict[int, dict]:
-        """Maps each issue number on the Project to its item id and field values by field name."""
+        """Maps each issue number on the Project to its item id and field values by field name.
+
+        Fails instead of skipping when GitHub hides an item's content (type REDACTED, #21): an unreadable item would
+        otherwise look absent, and set-fields and the gate would act on a wrong picture of the board.
+        """
         found: dict[int, dict] = {}
+        self.diagnostics = {}
+        redacted = 0
         cursor = ""
         while True:
             variables: dict[str, str | int] = {"project": self.project["id"]}
@@ -195,6 +206,11 @@ class Board:
                 variables["cursor"] = cursor
             page = self.graphql(ITEMS_QUERY, **variables)["node"]["items"]
             for node in page["nodes"]:
+                kind = node.get("type") or "UNKNOWN"
+                self.diagnostics[kind] = self.diagnostics.get(kind, 0) + 1
+                if kind == "REDACTED" or (kind == "ISSUE" and not (node.get("content") or {}).get("number")):
+                    redacted += 1
+                    continue
                 number = (node.get("content") or {}).get("number")
                 if number is None:
                     continue
@@ -206,8 +222,14 @@ class Board:
                                             if key in value)
                 found[number] = {"item": node["id"], "fields": values}
             if not page["pageInfo"]["hasNextPage"]:
-                return found
+                break
             cursor = page["pageInfo"]["endCursor"]
+        if redacted:
+            raise BridgeError(
+                f"{redacted} of {sum(self.diagnostics.values())} Project items are hidden from the "
+                f"pivot-board-bridge App (item types {self.diagnostics}). GitHub hides an item's issue when the App's "
+                f"installation can't access its repository: give the installation access to {self.repository}.")
+        return found
 
     def add(self, number: int) -> str:
         """Adds an issue of the repository to the Project; GitHub returns the existing item when it is there."""
@@ -274,7 +296,8 @@ def run(operation: str, payload: dict, board_factory: Callable[[], Board]) -> tu
         wanted = issue_numbers(payload, "issues")
         items = board.items()
         return {"items": {str(number): value for number, value in sorted(items.items())
-                          if not wanted or number in wanted}}, True
+                          if not wanted or number in wanted},
+                "item_types": board.diagnostics}, True
     if operation == "set-fields":
         return board.set_fields(payload), True
     os.environ["BOARD_PROJECT_ID"] = board.project["id"]
