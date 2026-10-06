@@ -2,6 +2,7 @@ name: Feature
 description: "A coherent capability under an epic, delivered through several outcomes."
 title: "Feature: "
 labels: ["type:feature"]
+type: Feature
 body:
   - type: markdown
     attributes:

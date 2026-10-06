@@ -30,9 +30,9 @@ The agent works from Claude Code cloud sessions, where GitHub GraphQL is blocked
 > `BOARD_APP_PRIVATE_KEY` of the `board` environment (deployment branches: `main` only), with the App's client id in
 > the environment variable `BOARD_APP_CLIENT_ID`. Grants, through a token that expires after one hour and is revoked
 > when the job ends: Issues read and write and Pull requests read on this repository, and the organization's Projects
-> read and write. Expires: never. Rotation: none needed; generate a new key and delete the old one on the App's page
-> if it may have leaked. Revocation: the App's settings page, Private keys. Why it is needed: GitHub Projects can't be
-> read or written with the built-in token, and personal access tokens are forbidden.
+> and Issue types read and write. Expires: never. Rotation: none needed; generate a new key and delete the old one on
+> the App's page if it may have leaked. Revocation: the App's settings page, Private keys. Why it is needed: GitHub
+> Projects and issue types can't be written with the built-in token, and personal access tokens are forbidden.
 
 | Operation | What it does |
 | --- | --- |
@@ -42,6 +42,7 @@ The agent works from Claude Code cloud sessions, where GitHub GraphQL is blocked
 | `report` | Runs the board report and keeps the `scheduling-violation` label current. |
 | `set-fields` | Sets or clears field values by name, as a dry run by default, skipping values already set. |
 | `add-iteration` | Adds an iteration (a sprint) to an iteration field, as a dry run by default; refuses a title already used or dates that overlap another iteration. |
+| `sync-issue-types` | Creates the missing organization issue types (Epic, Story, Improvement, Spike next to GitHub's Task, Bug and Feature), then gives each issue the type of its one `type:` label, as a dry run by default. It never changes or deletes an existing type; a disabled one is reported. |
 | `set-options` | Makes a list the options of a single-select field, as a dry run by default, keeping the id of each option kept or renamed (`"from"`); shows the options items still use, and refuses to remove them on apply unless `"remove_used": true`. |
 
 The workflow runs only from `main`, one run at a time, and validates every payload against the Project's own fields
@@ -67,6 +68,9 @@ runs with the built-in token on every issue change and every 15 minutes:
 - **Dependencies** (audit only): a cycle or a canceled prerequisite gets `dependency-problem`.
 - **Completion:** a parent closed as completed is reopened until every child is closed and at least one is completed.
 - **Releases:** a release milestone closed before its record shows Released with a delivery date is reopened.
+- **Type:** an open item with one `type:` label carries the matching issue type, otherwise `type-mismatch`. The label
+  stays the source the rules read; the native type mirrors it for the board's Type column. The rule waits until the
+  repository offers that type, and a change of type alone is picked up by the 15-minute schedule.
 
 The workflow also creates the seven `type:` labels and the rule labels if they are missing. A new issue gets
 10 minutes before it is flagged.
@@ -85,6 +89,11 @@ These steps are the owner's, in the browser, because neither API can make them:
 4. **Sprint field:** in the Project's **Settings → Sprint**, make the iterations two weeks long and add **Sprint 1**
    starting 2026-10-06. RaidManager's past iterations, copied with the Project, can be removed there. Done on
    2026-10-06; later sprints are added by the agent with `add-iteration` (#7).
+
+5. **Issue types permission:** on the `pivot-board-bridge` App's settings page, set the organization permission
+   **Issue types** to **Read and write**, and accept it on the installation page. Done on 2026-10-06 (#25). The
+   `create-github-app-token` action has no input for this permission, so `sync-issue-types` uses a token that lists no
+   permissions and therefore gets exactly what the installation grants; the other operations keep their narrower token.
 
 ## Verify
 

@@ -2,6 +2,7 @@ name: Improvement
 description: "A verifiable enhancement to something that meets its specification, under a feature."
 title: "Improvement: "
 labels: ["type:improvement"]
+type: Improvement
 body:
   - type: markdown
     attributes:

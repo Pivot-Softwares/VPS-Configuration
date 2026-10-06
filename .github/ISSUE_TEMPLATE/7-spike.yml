@@ -2,6 +2,7 @@ name: Spike
 description: "Timeboxed research that answers a question, under a feature, done through its tasks."
 title: "Spike: "
 labels: ["type:spike"]
+type: Spike
 body:
   - type: markdown
     attributes:

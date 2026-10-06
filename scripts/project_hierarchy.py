@@ -9,6 +9,8 @@ GITHUB_TOKEN; the rules that need Project fields run in the agent preflight inst
   release (section 15, A2). Nothing is standalone. A violation adds the needs-parent label and one explanatory
   comment; fixing the item removes the label.
 - Contract: an open item created since adoption answers every section 4 heading, or gets needs-contract.
+- Type: an open item with one type label carries the matching organization issue type, or gets type-mismatch. The rule
+  waits until the repository offers that issue type, so it stays quiet before the board bridge creates the types.
 - Dependencies (audit only): a dependency cycle, or an open item waiting on a canceled prerequisite, gets
   dependency-problem (section 10).
 - Releases (audit and milestone events): a release milestone closed before its record shows it Released with a
@@ -31,7 +33,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
-from work_contracts import (BUG, EPIC, FEATURE, IMPROVEMENT, SPIKE, STORY, TASK, canceled_prerequisites,
+from work_contracts import (BUG, EPIC, FEATURE, IMPROVEMENT, ISSUE_TYPES, SPIKE, STORY, TASK, canceled_prerequisites,
                             contract_problem, dependency_cycles, release_record_problem, scope_milestone_problem,
                             task_milestone_problem)
 
@@ -39,6 +41,7 @@ from work_contracts import (BUG, EPIC, FEATURE, IMPROVEMENT, SPIKE, STORY, TASK,
 NEEDS_PARENT = "needs-parent"
 NEEDS_CONTRACT = "needs-contract"
 DEPENDENCY_PROBLEM = "dependency-problem"
+TYPE_MISMATCH = "type-mismatch"
 RELEASES = Path("docs/planning/releases")
 # A new issue usually gets its parent a moment after it is created, so the parent rule waits before flagging it.
 GRACE = timedelta(minutes=10)
@@ -63,7 +66,8 @@ NAMES = {kind: kind.removeprefix("type:") for kind in (EPIC, FEATURE, STORY, IMP
 DEPTH = {TASK: 0, **dict.fromkeys(BACKLOG_ITEMS, 1), FEATURE: 2, EPIC: 3}
 ANCESTOR_LEVELS = 3
 CLOSING_LINE = re.compile(r"^Closes #(\d+)[ \t]*$", re.IGNORECASE)
-FIELDS = "number state stateReason createdAt milestone { title } labels(first: 20) { nodes { name } }"
+FIELDS = ("number state stateReason createdAt milestone { title } issueType { name } "
+          "labels(first: 20) { nodes { name } }")
 NODE = (f"{FIELDS} body parent {{ {FIELDS} }} subIssues(first: 100) {{ nodes {{ {FIELDS} }} }} "
         f"blockedBy(first: 50) {{ nodes {{ {FIELDS} }} }}")
 
@@ -77,19 +81,21 @@ class Issue:
     created_at: datetime | None = None
     body: str = ""
     milestone: str | None = None
+    issue_type: str | None = None
 
     @classmethod
     def from_api(cls, value: dict) -> Issue:
-        """Reads an issue from the REST (lists of label objects) or GraphQL (labels.nodes) shape."""
+        """Reads an issue from the REST (lists of label objects, type) or GraphQL (labels.nodes, issueType) shape."""
         labels = value["labels"]
         names = labels["nodes"] if isinstance(labels, dict) else labels
         reason = value.get("state_reason") or value.get("stateReason") or ""
         created = value.get("created_at") or value.get("createdAt")
         milestone = value.get("milestone") or {}
+        issue_type = value.get("type") or value.get("issueType") or {}
         return cls(value["number"], value["state"].lower(), frozenset(label["name"] for label in names),
                    reason.lower() or None,
                    datetime.fromisoformat(created.replace("Z", "+00:00")) if created else None,
-                   value.get("body") or "", milestone.get("title"))
+                   value.get("body") or "", milestone.get("title"), issue_type.get("name"))
 
     @property
     def kinds(self) -> list[str]:
@@ -192,6 +198,15 @@ def prerequisite_problem(node: Node, cycles: list[list[int]]) -> str | None:
     return None
 
 
+def type_problem(issue: Issue, available: frozenset[str]) -> str | None:
+    """The native issue type must match the one type label, once the repository offers that type."""
+    expected = ISSUE_TYPES.get(issue.kind or "")
+    if issue.state != "open" or expected is None or expected not in available or issue.issue_type == expected:
+        return None
+    found = f"is {issue.issue_type}" if issue.issue_type else "is not set"
+    return f"The label `{issue.kind}` needs the issue type {expected}, but the type {found}. Set the type to {expected}."
+
+
 def completion_problem(issue: Issue, children: list[Issue]) -> str | None:
     """Returns why a completed parent may not stay closed, or None when it may."""
     kind = issue.kind
@@ -282,11 +297,25 @@ class Guard:
         # The checkout the workflow runs on (main), where the release records are read.
         self.root = root or Path.cwd()
         self.reopened: set[int] = set()
+        self.available: frozenset[str] | None = None
 
     def current(self, issue: Issue) -> Issue:
         if issue.number not in self.reopened:
             return issue
-        return Issue(issue.number, "open", issue.labels, None, issue.created_at, issue.body, issue.milestone)
+        return Issue(issue.number, "open", issue.labels, None, issue.created_at, issue.body, issue.milestone,
+                     issue.issue_type)
+
+    def issue_types(self) -> frozenset[str]:
+        """The enabled issue types the repository offers, read once per run."""
+        if self.available is None:
+            try:
+                types = json.loads(gh("api", f"repos/{self.repository}/issue-types") or "[]")
+            except subprocess.CalledProcessError as error:
+                # The type rule must never stop the other rules: without the list it stays quiet this run.
+                print(f"WARNING: the type rule is skipped, issue types could not be read: {error.stderr.strip()}")
+                types = []
+            self.available = frozenset(kind["name"] for kind in types if kind.get("is_enabled", True))
+        return self.available
 
     def flag(self, issue: Issue, label: str, problem: str | None, rule: str) -> None:
         """Adds the label with one explanatory comment while the problem lasts, and removes it once it is fixed."""
@@ -309,6 +338,10 @@ class Guard:
         problem = None if len(issue.kinds) > 1 else contract_problem(issue.kind, issue.state, issue.created_at,
                                                                       issue.body)
         self.flag(issue, NEEDS_CONTRACT, problem, "Contract rule (specification section 4)")
+
+    def check_type(self, node: Node) -> None:
+        self.flag(node.issue, TYPE_MISMATCH, type_problem(node.issue, self.issue_types()),
+                  "Type rule (specification section 15)")
 
     def check_dependencies(self, node: Node, cycles: list[list[int]]) -> None:
         self.flag(node.issue, DEPENDENCY_PROBLEM, prerequisite_problem(node, cycles),
@@ -338,6 +371,7 @@ class Guard:
     def check(self, node: Node) -> None:
         self.check_parent(node)
         self.check_contract(node)
+        self.check_type(node)
         self.check_completion(node)
 
 

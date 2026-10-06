@@ -2,6 +2,7 @@ name: User story
 description: "A capability a user needs that does not exist yet, under a feature."
 title: "Story: "
 labels: ["type:story"]
+type: Story
 body:
   - type: markdown
     attributes:

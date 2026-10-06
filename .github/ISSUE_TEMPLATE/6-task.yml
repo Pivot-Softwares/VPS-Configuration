@@ -2,6 +2,7 @@ name: Task
 description: "A bounded implementation, investigation or verification step under a story, improvement, bug or spike."
 title: "Task: "
 labels: ["type:task"]
+type: Task
 body:
   - type: markdown
     attributes:

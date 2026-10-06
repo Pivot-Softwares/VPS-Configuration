@@ -21,7 +21,7 @@ GitHub GraphQL is blocked. Project fields therefore go through the **board bridg
 > `BOARD_APP_PRIVATE_KEY` of the `board` environment (deployments from `main` only), with the App's client id in the variable
 > `BOARD_APP_CLIENT_ID`. It never expires and needs no rotation; each run exchanges it for an installation token that expires
 > after one hour. The App is installed on this repository only, with Issues read and write, Pull requests read,
-> Metadata read and organization Projects read and write (`credentials-policy`,
+> Metadata read, and organization Projects and Issue types read and write (`credentials-policy`,
 > `docs/reference/project-automation.md`).
 
 - **Workflow:** `.github/workflows/board.yml`, started by `workflow_dispatch` on `main`. Start it with the GitHub
@@ -39,6 +39,7 @@ GitHub GraphQL is blocked. Project fields therefore go through the **board bridg
 | `report` | `{"apply_labels": true}` | The board report of `work-board-configuration-and-validation`; keeps `scheduling-violation` current. |
 | `set-fields` | `{"dry_run": true, "changes": [{"issue": 12, "field": "Status", "value": "In Progress"}]}` | Each change, `skipped` when already set; adds an issue to the Project first if needed. Values are option names, iteration titles, numbers, ISO dates or `null` to clear. |
 | `add-iteration` | `{"dry_run": true, "field": "Sprint", "title": "Sprint 3", "start_date": "2026-11-03"}` (`duration` in days defaults to the field's) | The iteration to add and those kept with their ids; after applying, `restored` and `cleared` item values and the iterations read back. |
+| `sync-issue-types` | `{"dry_run": true}` | The issue types to create (`types_to_create`, then `types_created`), disabled types, each issue whose type changes from its label (`changes`) and issues without exactly one type label (`skipped`). |
 | `set-options` | `{"dry_run": true, "field": "Area", "options": [{"name": "Security", "from": "Platform", "color": "RED", "description": "..."}]}` | The final options with the ids kept, `renamed`, `removed` and `removed_in_use`; after applying, `restored`, `cleared` and the options read back. |
 
 - **Dry run first** for every `set-fields` call that changes more than one item, and for every `add-iteration` and
@@ -60,12 +61,12 @@ with an unknown id. The bridge works by names, so the ids here are for checking,
 | Field | Field id | Values (option or iteration id) |
 | --- | --- | --- |
 | Status | `PVTSSF_lADOFC5Sts4Bl7IIzhkmEH0` | Backlog `f75ad846`, Ready `d41c15e0`, In Progress `47fc9ee4`, In Review `46ac76c5`, Blocked `b83f351d`, Done `98236657`, Canceled `ac06ee45` |
-| Sprint | `PVTIF_lADOFC5Sts4Bl7IIzhkmEI0` | Sprint 1 `963b920e` (2026-10-06), Sprint 2 `39d9cf14` (2026-10-20); 14 days each |
+| Sprint | `PVTIF_lADOFC5Sts4Bl7IIzhkmEI0` | Sprint 1 `963b920e` (2026-10-06), Sprint 2 `39d9cf14` (2026-10-20), Sprint 3 `aec3b89e` (2026-11-03); 14 days each |
 | Delivery Stage | `PVTSSF_lADOFC5Sts4Bl7IIzhkmEI4` | Business Analysis `9d9164e9`, Functional Analysis `8eadb407`, Architecture Analysis `e1670f61`, Development `ecb25aca`, Testing `68dcaffd`, Deployment `9313482e` |
 | Story Points | `PVTF_lADOFC5Sts4Bl7IIzhkmEI8` | a number |
 | Risk | `PVTSSF_lADOFC5Sts4Bl7IIzhkmEJA` | Low `047760b3`, Medium `8b7214fc`, High `099e0d7c` |
 | Priority | `PVTSSF_lADOFC5Sts4Bl7IIzhkmEIo` | P0 Critical `2e29488f`, P1 High `14c3c65c`, P2 Normal `1abe36cd`, P3 Later `fe47cb25` |
-| Area | `PVTSSF_lADOFC5Sts4Bl7IIzhkmEIk` | still RaidManager's values; the owner chose Security, Server, Deployment, DNS & Mail, Monitoring & Backups, Process (#5), set by #8 |
+| Area | `PVTSSF_lADOFC5Sts4Bl7IIzhkmEIk` | Security `6cbbee57`, Server `fc6a1ce8`, Deployment `f5b1687e`, DNS & Mail `60bc9f9e`, Monitoring & Backups `92893987`, Process `c0bc1407` (set on 2026-10-06, #8) |
 | Start date | `PVTF_lADOFC5Sts4Bl7IIzhkmEIs` | a date |
 | Target date | `PVTF_lADOFC5Sts4Bl7IIzhkmEIw` | a date |
 
@@ -85,7 +86,8 @@ short Python script in the scratchpad that is safe to rerun.
 2. Write the body with exactly the headings of its issue form in `.github/ISSUE_TEMPLATE/` (`### Parent`,
    `### Purpose`, and so on), with LF line endings. Record what the owner decided under
    `### Owner decisions (<date>, recorded here)`.
-3. Create it with its `type:` label, milestone and assignee `AnnabiGihed`, titled `<Type>: <title>`.
+3. Create it with its `type:` label, the matching issue type, milestone and assignee `AnnabiGihed`, titled
+   `<Type>: <title>` (`issue_write` takes `type`; the forms set it themselves).
 4. Link the parent at once with the child's database id (not its number):
    `gh api -X POST repos/Pivot-Softwares/VPS-Configuration/issues/<parent>/sub_issues -F sub_issue_id=<child id>`.
 5. Set its fields with `set-fields`: Status, Sprint, Delivery Stage, Priority, Area and, for outcome items, Story Points
@@ -137,6 +139,9 @@ short Python script in the scratchpad that is safe to rerun.
 | --- | --- |
 | `read-items` returned `{}` while `set-fields` wrote values the owner could see (#21): GitHub hides an item's issue from a GitHub App whose installation can't access its repository, and the readers skipped such items silently. | Both readers now stop with the hidden-item count and the fix (give the installation access to the repository). Never treat an unreadable item as absent. |
 | The Project's **Auto-add to project** rule didn't add the first issues. | `set-fields` adds a missing issue itself; check new items with `read-items`. |
+| Setting Status to Done didn't close #5, #7 or #8. | After setting Done, check the issue is closed as completed and close it if not (the "Close after a merge" recipe). |
+| A merge closed task #8 before its post-merge runs. | Reopen it with a comment naming the runs still due, and close it again with their evidence. |
+| `create-github-app-token` has no input for the organization's Issue types permission. | `sync-issue-types` runs with a token that lists no permissions; never add an undocumented `permission-*` input. |
 | The copied Sprint field held RaidManager's completed iterations, one titled like the new `Sprint 1`, and the lookup by title could pick the completed one (#7). | Titles resolve to current or future iterations first and shared titles are refused; sprints are added with `add-iteration`. |
 
 ## Pitfalls inherited from RaidManager

@@ -2,6 +2,7 @@ name: Epic
 description: "A broad objective that requires several features."
 title: "Epic: "
 labels: ["type:epic"]
+type: Epic
 body:
   - type: markdown
     attributes:
