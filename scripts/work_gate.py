@@ -339,7 +339,7 @@ ITEMS_QUERY = """query($cursor: String) { node(id: "%s") { ... on ProjectV2 { it
     stage: fieldValueByName(name: "Delivery Stage") { ... on ProjectV2ItemFieldSingleSelectValue { name } }
     points: fieldValueByName(name: "Story Points") { ... on ProjectV2ItemFieldNumberValue { number } }
     sprint: fieldValueByName(name: "Sprint") { ... on ProjectV2ItemFieldIterationValue { title startDate duration } }
-    content { ... on Issue { number title state stateReason body milestone { title }
+    type content { ... on Issue { number title state stateReason body milestone { title }
       labels(first: 20) { nodes { name } } assignees(first: 10) { nodes { login } } parent { number }
       blockedBy(first: 50) { nodes { number state stateReason } } } }
   } } } } }"""
@@ -347,6 +347,10 @@ ITEMS_QUERY = """query($cursor: String) { node(id: "%s") { ... on ProjectV2 { it
 
 def item_from_api(node: dict) -> Item | None:
     content = node.get("content") or {}
+    if node.get("type") == "REDACTED" or (node.get("type") == "ISSUE" and "number" not in content):
+        # GitHub hides the issue when the reader can't access its repository (#21); never treat it as absent.
+        raise SystemExit("A Project item is hidden from this reader: its repository isn't accessible to the "
+                         "pivot-board-bridge installation, so eligibility is unknown (specification section 18).")
     if "number" not in content:
         return None
     sprint = node.get("sprint")
@@ -379,7 +383,10 @@ def fetch_items() -> dict[int, Item]:
     while True:
         arguments = (["api", "graphql", "-f", f"query={ITEMS_QUERY % project_id()}"]
                      + (["-f", f"cursor={cursor}"] if cursor else []))
-        page = json.loads(gh(*arguments))["data"]["node"]["items"]
+        response = json.loads(gh(*arguments))
+        if response.get("errors"):
+            raise SystemExit(f"GitHub answered with errors: {response['errors']}")
+        page = response["data"]["node"]["items"]
         for node in page["nodes"]:
             item = item_from_api(node)
             if item:
