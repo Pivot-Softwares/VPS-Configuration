@@ -504,7 +504,7 @@ Recheck platform support when adopting the configuration, especially for Azure D
 | --- | --- |
 | Sprint duration | Two weeks, every sprint, as in RaidManager. |
 | Timezone and boundaries | Europe/Brussels; each sprint starts and ends at local midnight, start inclusive and end exclusive. |
-| Sprint 1 | Unknown: needs owner decision. |
+| Sprint 1 | 2026-10-06 00:00 to 2026-10-20 00:00 Europe/Brussels (owner decision, 2026-10-06, ADR-0001). |
 | Planning records | Repository files: `docs/planning/sprints/sprint-NN.md` and `docs/planning/releases/<version>.md`, changed through pull requests. A release milestone's description links its record. |
 | Automation access | *Amended 2026-10-06 (A11).* No personal token. Workflows enforce what the built-in `GITHUB_TOKEN` can read (issues, labels, milestones, dependencies, pull requests). The Project belongs to the `Pivot-Softwares` organization, and its fields are read and written by the board bridge workflow with the `pivot-board-bridge` GitHub App, whose private key is the only automation secret, in the `board` environment limited to `main`. The agent works from cloud sessions, which can't use a local `gh` login. |
 | Deployment status | As RaidManager's A9 and A10: each deployment workflow labels what it delivered with the built-in token (`deployed:<environment>`, `deploy-failed:<environment>`, and the release milestone line). Nobody sets these labels by hand. |

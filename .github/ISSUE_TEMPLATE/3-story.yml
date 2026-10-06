@@ -1,0 +1,65 @@
+name: User story
+description: "A capability a user needs that does not exist yet, under a feature."
+title: "Story: "
+labels: ["type:story"]
+body:
+  - type: markdown
+    attributes:
+      value: "Work items follow the Work Management and Delivery Specification (docs/reference/work-management-specification.md, ADR-0001): Epic → Feature → User Story, Improvement, Bug or Spike → Task, and nothing is standalone. Classify by intent first, then scope (section 3). Choose a user story when a user needs a capability that does not exist yet. Its parent is a feature. After creating this issue, add it as a sub-issue of its parent at once. Answer every field; write `Unknown: needs clarification` for what isn't known yet, and such an item stays in Backlog until it is clarified (section 4)."
+  - type: input
+    id: parent
+    attributes:
+      label: Parent
+      description: "The feature this story belongs to, for example #2."
+      placeholder: "#"
+    validations:
+      required: true
+  - type: input
+    id: user
+    attributes:
+      label: User
+      description: "Who needs the capability, for example an officer."
+    validations:
+      required: true
+  - type: textarea
+    id: need
+    attributes:
+      label: Need
+      description: "The capability they need that does not exist yet."
+    validations:
+      required: true
+  - type: textarea
+    id: benefit
+    attributes:
+      label: Benefit
+      description: "Why they need it: the value it brings."
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: "Affected surfaces (website, Discord bot, addon, companion, API) and boundaries."
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: "Observable, independently verifiable criteria, including invalid, unavailable and boundary cases."
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: "Prerequisites as #N (also linked as blocked-by), or None. Parents are not dependencies."
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: "How each criterion is verified. Story Points are set on the Project before sprint selection."
+    validations:
+      required: true

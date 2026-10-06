@@ -1,0 +1,72 @@
+name: Task
+description: "A bounded implementation, investigation or verification step under a story, improvement, bug or spike."
+title: "Task: "
+labels: ["type:task"]
+body:
+  - type: markdown
+    attributes:
+      value: "Work items follow the Work Management and Delivery Specification (docs/reference/work-management-specification.md, ADR-0001): Epic → Feature → User Story, Improvement, Bug or Spike → Task, and nothing is standalone. Classify by intent first, then scope (section 3). Choose a task when a bounded implementation, investigation, or verification step is needed. Its parent is a user story, improvement, bug or spike. After creating this issue, add it as a sub-issue of its parent at once. Answer every field; write `Unknown: needs clarification` for what isn't known yet, and such an item stays in Backlog until it is clarified (section 4)."
+  - type: input
+    id: parent
+    attributes:
+      label: Parent
+      description: "The user story, improvement, bug or spike this task belongs to, for example #12."
+      placeholder: "#"
+    validations:
+      required: true
+  - type: textarea
+    id: purpose
+    attributes:
+      label: Purpose
+      description: "Why the parent needs this step."
+    validations:
+      required: true
+  - type: textarea
+    id: bounded-deliverable
+    attributes:
+      label: Bounded deliverable
+      description: "The one concrete deliverable."
+    validations:
+      required: true
+  - type: textarea
+    id: execution-scope
+    attributes:
+      label: Execution scope
+      description: "What the task changes and what it doesn't."
+    validations:
+      required: true
+  - type: dropdown
+    id: delivery-stage
+    attributes:
+      label: Delivery Stage
+      description: "The activity, also set on the Project (specification section 11)."
+      options:
+        - Business Analysis
+        - Functional Analysis
+        - Architecture Analysis
+        - Development
+        - Testing
+        - Deployment
+    validations:
+      required: true
+  - type: textarea
+    id: completion-conditions
+    attributes:
+      label: Completion conditions
+      description: "Concrete, checkable conditions; not a copy of the parent's criteria."
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: "Prerequisites as #N (also linked as blocked-by), or None. Parents are not dependencies."
+    validations:
+      required: true
+  - type: textarea
+    id: verification-method
+    attributes:
+      label: Verification method
+      description: "The tests, checks or reviews that prove it, and where the evidence is recorded."
+    validations:
+      required: true

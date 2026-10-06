@@ -1,0 +1,2 @@
+# Every issue is a typed work item with its contract; nothing is standalone (work management specification, ADR-0001).
+blank_issues_enabled: false

@@ -13,3 +13,6 @@ All notable changes to this repository are documented here. The format follows
   backups.
 - The Work Management and Delivery Specification, adopted from RaidManager with this repository's policies.
 - ADR-0001: adopt the RaidManager work process, recording the owner's planning decisions of 2026-10-06.
+- The board foundation: the board bridge (`board` workflow, `scripts/board_bridge.py`) for the organization Project,
+  RaidManager's hierarchy guard and active-sprint gate without the mockup rule, the issue forms, the type and rule
+  labels, the Sprint 1 record and the project automation reference.
