@@ -16,6 +16,8 @@ All notable changes to this repository are documented here. The format follows
 - The board foundation: the board bridge (`board` workflow, `scripts/board_bridge.py`) for the organization Project,
   RaidManager's hierarchy guard and active-sprint gate without the mockup rule, the issue forms, the type and rule
   labels, the Sprint 1 record and the project automation reference.
+- The v1.0 release record, the Sprint 1 selection and capacity, and the Project's field, option and iteration ids in
+  `vps-board-operations` (#6).
 
 ### Fixed
 
