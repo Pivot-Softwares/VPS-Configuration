@@ -51,7 +51,9 @@ owner's PC. This repository's rule, set by the owner on 2026-10-06 (ADR-0001):
      reviewer; never a repository or organization secret when an environment works;
    - on the VPS, only what a running application needs at run time, readable only by that application's account,
      never in a Git checkout, an image or a log, and never a credential that reaches another system (GitHub, OVH, DNS,
-     mail or a registry);
+     mail or a registry). **One owner exception (2026-10-07, #37):** the delivery template App's private key and
+     webhook secret live on the VPS, because the owner chose to host the App there; ADR-0002 (#40) defines how they
+     are protected;
    - on the owner's PC, only through a tool's own sign-in store (for example the Windows credential store), never as
      plain environment variables.
 3. **Register it** in `docs/reference/credentials.md`: name, purpose, scope, location, owner, expiry, rotation and

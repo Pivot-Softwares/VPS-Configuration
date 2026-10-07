@@ -22,7 +22,7 @@ then agree the plan for the VPS's security and the three deployments as decision
 ## Capacity assumptions
 
 20 Story Points, the owner's decision of 2026-10-06 (recorded on #5): conservative, since this repository has no
-velocity yet (specification §9). Selected: 18 points.
+velocity yet (specification §9). Selected: 20 points.
 
 ## Selected scope
 
@@ -37,7 +37,9 @@ owner selected these items on 2026-10-06 (recorded on #5). Each planned window i
 | #7 Let the board bridge manage sprints and field options | Improvement | 3 | #8 (Development) | #6 for the gate |
 | #24 Keep native issue types in step with the type labels | Improvement | 3 | #25 (Development) | #6 |
 | #29 Done doesn't close items and new issues aren't added to the Project | Bug | 3 | #30 (Development) | None |
-| #31 Port RaidManager's review gate, merge and pull-request checks | Improvement | 5 | #32, #33, #34 (Development) | #32 before #33, #33 before #34 |
+| #31 Port RaidManager's review gate, merge and pull-request checks | Improvement | 3 | #32, #33 (Development) | #32 before #33 |
+| #39 Design the delivery template and its GitHub App | Spike | 3 | #40 (Architecture Analysis) | None |
+| #43 Record the lessons of the 2026-10-06 and 2026-10-07 sessions | Improvement | 1 | #44 (Development) | None |
 
 Bug #21 and task #22 started on 2026-10-06 under a recorded exception to the gate (standing owner decision on #21:
 blocking board bugs come first), and #6 under a one-time exception for condition 4, since the release record is its
@@ -50,6 +52,8 @@ own deliverable (owner decision on #6). The bug was completed on 2026-10-06 by t
 | 2026-10-06 | #5, #6, #7, #8, #21 and #22 selected. | #5 |
 | 2026-10-06 | #24 and #25 added. | #5 |
 | 2026-10-06 | #29 to #34 added, all P0 Critical: full automation and a correct board come first (owner's option 1). | #29, #31 |
+| 2026-10-07 | #39 and #40 added (delivery template spike, decisions D7 and Q1). #31 moved under the template epic #37 and re-estimated from 5 to 3; its task #34 moved with the new improvement #42 (2 points) to Sprint 2 (decision Q2). | #37, #39, #31 |
+| 2026-10-07 | #43 and #44 added: the session lessons (`vps-conventions` §10). | #43 |
 
 ## Outcome
 

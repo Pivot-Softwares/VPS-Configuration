@@ -25,6 +25,9 @@ All notable changes to this repository are documented here. The format follows
   each issue form sets its type (#25).
 - Board bridge operation `add-items`, which the `board` workflow runs for every new, reopened or transferred issue, and
   the Project's workflows with their state in `dump-config` (#30).
+- The delivery template as the primary goal in `AGENTS.md` and `vps-conventions`, with the owner's decisions of
+  2026-10-07; the credential register `docs/reference/credentials.md`; the board pitfalls and cloud-session workarounds
+  found on 2026-10-06 and 2026-10-07 in `vps-board-operations` and `vps-conventions` (#44).
 
 ### Fixed
 

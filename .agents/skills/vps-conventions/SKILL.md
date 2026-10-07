@@ -22,6 +22,38 @@ Precedence, highest first:
 5. The imported house skills (`docs-*`, `pr-and-branching-standards`, `repository-readiness`,
    `architecture-proposal`).
 
+## Primary goal: the delivery template (owner decisions of 2026-10-07, #37)
+
+Everything built here serves one primary goal: a **template that one action applies to any repository of a GitHub
+organization**, configuring the Project, fields, statuses, issue types, forms, rules, checks and full automation.
+This repository is its first user; the VPS work comes after it (D7).
+
+- **Automation target.** `main` is protected: approved pull requests only. People create work items, move a task to
+  In Progress, write code and review; nothing else is manual. Moving a task to In Progress creates its branch
+  `<ParentType>-<parent>-Task-<task>` (for example `Improvement-5-Task-6`); opening its pull request moves it to In
+  Review; an approved, merged pull request moves it to Done and updates everything, and its branch is deleted; changes
+  requested, or a pull request closed unmerged, move it back to In Progress with the reviewer's comments on the task.
+  Every pull request passes documentation, code-comment, Sonar and the applicable gates, under review rules that
+  prevent fake reviews.
+- **"Automated" means nobody triggers it**, neither the owner nor the agent. Anything the agent starts (a bridge run,
+  a Status change) is manual. Report status with that definition.
+- **The engine is an organization GitHub App written in .NET (L), hosted on the VPS (H).** It receives Project
+  events, applies what "Use this template" can't copy (Project, fields, labels, issue types, rulesets, settings,
+  files), works on organizations only, says what the Free plan can't do on private repositories, and holds
+  Administration: write. ⚠️ Its private key and webhook secret live on the VPS by owner exception
+  (`credentials-policy`).
+- **D1:** a new repository `Pivot-Softwares/delivery-template`, created by the owner when the code starts, applied to
+  VPS-Configuration first. **D5:** CodeQL and SonarCloud automatic analysis; token-based Sonar only where needed,
+  flagged. **D6:** automatic In Progress and In Review roll-up; a parent is Done automatically only when all its
+  children are done and every acceptance-criteria box is ticked (amends specification §18 through ADR-0002). **D7:**
+  the template epic #37 is the top priority and the releases are re-planned (#40). **D8:** all the enterprise
+  additions (versioned template with update pull requests, per-repository config file, end-to-end self-test,
+  Dependabot, Scorecard, SBOM, push protection, audit comments, metrics, sprint roll-over, release notes).
+- **Q1:** the VPS security baseline (reset, hardening, firewall, container runtime, reverse proxy with HTTPS) is on
+  the template's critical path, since the App runs there; template parts that don't need the App are built in
+  parallel. **Q2:** Sprint 1 stays at 20 points.
+- The architecture proposal and ADR-0002 (task #40) carry every remaining choice with options.
+
 ## 1. Scope of this repository (owner decision B, ADR-0001)
 
 - **This repository owns everything shared on the server:** operating-system hardening, SSH, firewall, users,
@@ -59,9 +91,10 @@ Precedence, highest first:
 
 | Question | State |
 | --- | --- |
-| Repository visibility: public (recommended) or private on the Free organization plan, which loses branch protection, Pages and wiki | Open |
+| Repository visibility | Settled: public (decision F, ADR-0001) |
 | Sprint 1 dates | Settled: 2026-10-06 to 2026-10-20 (ADR-0001) |
-| The first release: goal, scope and target date | Open |
+| The first release: goal, scope and target date | Settled on 2026-10-06 (#5); re-planned by the template decision D7 in #40 |
+| The delivery template's architecture (App design, permissions, secrets on the VPS, checks, versioning) | Open: options in the proposal of #40 |
 | Every technical choice the plan contains (operating system, reverse proxy, monitoring, backups, deployment method) | Each one is a decision record with options (`decision-options`) |
 
 When one of these is settled, record the decision (§8) and update this table in the same pull request.
@@ -147,6 +180,18 @@ Carried over from RaidManager (`raidmanager-conventions` §13) and the owner's i
 - A repository is attached with `add_repo` and cloned under `/home/user/<name>`. Two repositories with the same name
   can't share a session.
 - Write files with LF line endings. The owner's PC is Windows: owner steps on the PC use PowerShell.
+- **When the shell is blocked** (the auto-mode check answers "no verdict"), keep working with the GitHub MCP tools:
+  `actions_run_trigger` starts the board bridge, `actions_list` finds the run and its job, `get_job_logs` reads the
+  result. Read and edit files with the file tools, and run tests once the shell is back. Never wait idle.
+- **Reading a run's result:** use `get_job_logs`. The REST log download redirects to a storage host the proxy
+  refuses.
+- **Starting the bridge from the shell:** `gh api -X POST repos/<repo>/actions/workflows/board.yml/dispatches -f
+  ref=main -f "inputs[operation]=<op>" -f "inputs[payload]=<json>"`, then wait for the first run numbered above the
+  last one seen before the dispatch. Issue events start `board` runs too, so run numbers aren't consecutive and the
+  latest run isn't necessarily yours.
+- **A new branch needs its fetch refspec:** the clone fetches only configured branches, so add
+  `git config --add remote.origin.fetch +refs/heads/<branch>:refs/remotes/origin/<branch>` before pushing, and remove
+  the refspec of a deleted branch, or `git fetch` fails and the stop hook reports a pushed branch as unpushed.
 
 ## 10. Ending a session ("new session", mandatory)
 
