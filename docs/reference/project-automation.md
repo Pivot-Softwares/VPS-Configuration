@@ -36,11 +36,12 @@ The agent works from Claude Code cloud sessions, where GitHub GraphQL is blocked
 
 | Operation | What it does |
 | --- | --- |
-| `dump-config` | Prints the Project's fields with their option and iteration ids, and its views. |
+| `dump-config` | Prints the Project's fields with their option and iteration ids, its views, and its built-in workflows with their state. |
 | `read-items` | Prints each issue's Project item id and field values. |
 | `preflight` | Runs the active-sprint gate for a task (`scripts/work_gate.py`); the run fails on any failed condition. |
 | `report` | Runs the board report and keeps the `scheduling-violation` label current. |
-| `set-fields` | Sets or clears field values by name, as a dry run by default, skipping values already set. |
+| `set-fields` | Sets or clears field values by name, as a dry run by default, skipping values already set. A Status of Done closes the issue as completed, Canceled closes it as not planned, and any other Status reopens a closed issue. |
+| `add-items` | Adds issues to the Project and gives each one without a Status the first Status, Backlog. The workflow runs it by itself for every new, reopened or transferred issue, with a payload built from the issue number only. |
 | `add-iteration` | Adds an iteration (a sprint) to an iteration field, as a dry run by default; refuses a title already used or dates that overlap another iteration. |
 | `sync-issue-types` | Creates the missing organization issue types (Epic, Story, Improvement, Spike next to GitHub's Task, Bug and Feature), then gives each issue the type of its one `type:` label, as a dry run by default. It never changes or deletes an existing type; a disabled one is reported. |
 | `set-options` | Makes a list the options of a single-select field, as a dry run by default, keeping the id of each option kept or renamed (`"from"`); shows the options items still use, and refuses to remove them on apply unless `"remove_used": true`. |
@@ -85,7 +86,9 @@ These steps are the owner's, in the browser, because neither API can make them:
    `board` environment. It isn't secret. `BOARD_APP_ID` can stay or go; the workflow no longer reads it.
 3. **Project workflows:** in the Project's **Workflows**, keep **Item closed** and **Item reopened** off, **Auto-close
    issue**, **Item added to project** (Status `Backlog`) and **Auto-add sub-issues to project** on, and turn on
-   **Auto-add to project** for `Pivot-Softwares/VPS-Configuration` with the filter `is:issue`.
+   **Auto-add to project** for `Pivot-Softwares/VPS-Configuration` with the filter `is:issue`. The bridge doesn't
+   depend on them: `set-fields` closes and reopens issues to match their Status, and the `board` workflow adds new
+   issues (#29), because Auto-close didn't act on the bridge's changes and Auto-add missed the first issues.
 4. **Sprint field:** in the Project's **Settings → Sprint**, make the iterations two weeks long and add **Sprint 1**
    starting 2026-10-06. RaidManager's past iterations, copied with the Project, can be removed there. Done on
    2026-10-06; later sprints are added by the agent with `add-iteration` (#7).

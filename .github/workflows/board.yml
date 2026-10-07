@@ -3,14 +3,18 @@ name: board
 # The board bridge (specification section 22, A11; skill vps-board-operations): the agent works from cloud sessions,
 # where GitHub GraphQL is blocked, so it starts this workflow to read and write the organization Project's fields.
 # It runs only from main, in the board environment, with a one-hour token of the pivot-board-bridge GitHub App.
+# A new, reopened or transferred issue runs add-items, so every issue is on the Project without the agent (#29).
 on:
+  issues:
+    types: [opened, reopened, transferred]
   workflow_dispatch:
     inputs:
       operation:
         description: Operation
         type: choice
         required: true
-        options: [dump-config, read-items, preflight, report, set-fields, add-iteration, set-options, sync-issue-types]
+        options: [dump-config, read-items, preflight, report, set-fields, add-iteration, set-options, sync-issue-types,
+                  add-items]
       payload:
         description: JSON payload (see scripts/board_bridge.py)
         type: string
@@ -65,6 +69,12 @@ jobs:
           BOARD_ORG: ${{ github.repository_owner }}
           BOARD_PROJECT_NUMBER: '1'
           BOARD_REPOSITORY: ${{ github.repository }}
-          OPERATION: ${{ inputs.operation }}
+          OPERATION: ${{ inputs.operation || 'add-items' }}
           PAYLOAD: ${{ inputs.payload }}
-        run: python scripts/board_bridge.py
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          # An issue event carries no inputs: its payload is built from the issue number, never from issue text.
+          if [ "$GITHUB_EVENT_NAME" = issues ]; then
+            PAYLOAD="{\"dry_run\": false, \"issues\": [$ISSUE_NUMBER]}"
+          fi
+          PAYLOAD="$PAYLOAD" python scripts/board_bridge.py

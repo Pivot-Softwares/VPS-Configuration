@@ -37,7 +37,8 @@ GitHub GraphQL is blocked. Project fields therefore go through the **board bridg
 | `read-items` | `{"issues": [12, 13]}` or `{}` for all | Each item's Project item id and field values. |
 | `preflight` | `{"task": 12}` | PASS or FAIL for each of the seven gate conditions (spec §8), with the correction; the job fails on any FAIL. |
 | `report` | `{"apply_labels": true}` | The board report of `work-board-configuration-and-validation`; keeps `scheduling-violation` current. |
-| `set-fields` | `{"dry_run": true, "changes": [{"issue": 12, "field": "Status", "value": "In Progress"}]}` | Each change, `skipped` when already set; adds an issue to the Project first if needed. Values are option names, iteration titles, numbers, ISO dates or `null` to clear. |
+| `set-fields` | `{"dry_run": true, "changes": [{"issue": 12, "field": "Status", "value": "In Progress"}]}` | Each change, `skipped` when already set; adds an issue to the Project first if needed. Values are option names, iteration titles, numbers, ISO dates or `null` to clear. `issues` lists each issue the Status closes (Done: completed, Canceled: not planned) or reopens (any other Status), even when the Status was already set. |
+| `add-items` | `{"dry_run": true, "issues": [12]}` | Each issue `add`ed to the Project and given Status Backlog when it has none. The `board` workflow runs it by itself for every new, reopened or transferred issue. |
 | `add-iteration` | `{"dry_run": true, "field": "Sprint", "title": "Sprint 3", "start_date": "2026-11-03"}` (`duration` in days defaults to the field's) | The iteration to add and those kept with their ids; after applying, `restored` and `cleared` item values and the iterations read back. |
 | `sync-issue-types` | `{"dry_run": true}` | The issue types to create (`types_to_create`, then `types_created`), disabled types, each issue whose type changes from its label (`changes`) and issues without exactly one type label (`skipped`). |
 | `set-options` | `{"dry_run": true, "field": "Area", "options": [{"name": "Security", "from": "Platform", "color": "RED", "description": "..."}]}` | The final options with the ids kept, `renamed`, `removed` and `removed_in_use`; after applying, `restored`, `cleared` and the options read back. |
@@ -120,9 +121,9 @@ short Python script in the scratchpad that is safe to rerun.
 1. Confirm the merge with the GitHub tools (`state` `MERGED`, `mergedAt` inside the task's active sprint, A5). Never
    clean up on the owner's word alone.
 2. Clean up the branches (`vps-github-project-workflow`).
-3. **Comment first, then set Done.** The Project closes an issue as soon as its Status becomes Done, so post the
+3. **Comment first, then set Done.** `set-fields` closes the issue as soon as its Status becomes Done, so post the
    evidence comment before setting the Target date to the closing day and Status `Done`.
-4. Check the issue is closed as completed; close it if not.
+4. Check the result's `issues` entry says `closed`; never close an issue by hand instead.
 5. Validate the parents independently (`work-task-execution-and-completion`) and close each with its own evidence.
 6. Run `report` and report its blocking categories.
 
@@ -138,8 +139,8 @@ short Python script in the scratchpad that is safe to rerun.
 | Pitfall | Fix |
 | --- | --- |
 | `read-items` returned `{}` while `set-fields` wrote values the owner could see (#21): GitHub hides an item's issue from a GitHub App whose installation can't access its repository, and the readers skipped such items silently. | Both readers now stop with the hidden-item count and the fix (give the installation access to the repository). Never treat an unreadable item as absent. |
-| The Project's **Auto-add to project** rule didn't add the first issues. | `set-fields` adds a missing issue itself; check new items with `read-items`. |
-| Setting Status to Done didn't close #5, #7 or #8. | After setting Done, check the issue is closed as completed and close it if not (the "Close after a merge" recipe). |
+| The Project's **Auto-add to project** rule didn't add the first issues. | The `board` workflow adds every new issue with `add-items` (#29); `dump-config` lists the Project's workflows and their state. |
+| Setting Status to Done didn't close #5, #7, #8, #24 or #25: the Project's **Auto-close issue** workflow didn't act on the bridge's change. | `set-fields` closes on Done or Canceled and reopens on any other Status (#29). |
 | A merge closed task #8 before its post-merge runs. | Reopen it with a comment naming the runs still due, and close it again with their evidence. |
 | `create-github-app-token` has no input for the organization's Issue types permission. | `sync-issue-types` runs with a token that lists no permissions; never add an undocumented `permission-*` input. |
 | The copied Sprint field held RaidManager's completed iterations, one titled like the new `Sprint 1`, and the lookup by title could pick the completed one (#7). | Titles resolve to current or future iterations first and shared titles are refused; sprints are added with `add-iteration`. |
