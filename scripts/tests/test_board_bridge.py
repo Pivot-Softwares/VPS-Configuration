@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -18,7 +19,8 @@ CONFIG = {"organization": {"projectV2": {
     "fields": {"nodes": [
         {"id": "F_TITLE", "name": "Title", "dataType": "TITLE"},
         {"id": "F_STATUS", "name": "Status", "dataType": "SINGLE_SELECT",
-         "options": [{"id": "o_backlog", "name": "Backlog"}, {"id": "o_ready", "name": "Ready"}]},
+         "options": [{"id": "o_backlog", "name": "Backlog"}, {"id": "o_ready", "name": "Ready"},
+                     {"id": "o_done", "name": "Done"}, {"id": "o_canceled", "name": "Canceled"}]},
         {"id": "F_SPRINT", "name": "Sprint", "dataType": "ITERATION",
          "configuration": {"duration": 14, "startDay": 1,
                            "iterations": [{"id": "i_1", "title": "Sprint 1", "startDate": "2026-10-06", "duration": 14}],
@@ -32,6 +34,8 @@ CONFIG = {"organization": {"projectV2": {
     ]},
     "views": {"nodes": [{"id": "V_1", "number": 1, "name": "Product backlog", "layout": "TABLE_LAYOUT",
                          "filter": "is:open"}]},
+    "workflows": {"nodes": [{"number": 1, "name": "Auto-close issue", "enabled": True},
+                            {"number": 2, "name": "Auto-add to project", "enabled": False}]},
 }}}
 ITEMS = {"node": {"items": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": [
     {"id": "PVTI_12", "type": "ISSUE", "content": {"__typename": "Issue", "number": 12}, "fieldValues": {"nodes": [
@@ -45,6 +49,9 @@ ITEMS = {"node": {"items": {"pageInfo": {"hasNextPage": False, "endCursor": None
     {"id": "PVTI_DRAFT", "type": "DRAFT_ISSUE", "content": {"__typename": "DraftIssue"},
      "fieldValues": {"nodes": []}},
 ]}}}
+
+
+ISSUE_PATH = re.compile(r"repos/Pivot-Softwares/VPS-Configuration/issues/(\d+)")
 
 
 def wrapped(name: str) -> dict:
@@ -67,11 +74,17 @@ class FakeGh:
         self.item_page: dict[str, Any] = copy.deepcopy(items or ITEMS)
         self.errors = errors
         self.ids_in_schema, self.keeps_values = ids_in_schema, keeps_values
+        # Issue states by number, for the REST reads and writes of the bridge; issues are open unless listed.
+        self.states: dict[int, str] = {}
 
     def __call__(self, *arguments: str) -> str:
         self.calls.append(arguments)
-        if arguments[:2] == ("api", "repos/Pivot-Softwares/VPS-Configuration/issues/13"):
-            return json.dumps({"node_id": "I_13"})
+        issue = ISSUE_PATH.fullmatch(next((argument for argument in arguments if argument.startswith("repos/")), ""))
+        if issue and "-X" not in arguments:
+            number = int(issue.group(1))
+            return json.dumps({"node_id": f"I_{number}", "state": self.states.get(number, "open")})
+        if issue:
+            return "{}"
         if "--input" in arguments:
             with open(arguments[arguments.index("--input") + 1], encoding="utf-8") as handle:
                 body = json.load(handle)
@@ -472,6 +485,78 @@ class SyncIssueTypesTests(unittest.TestCase):
     def test_the_operation_is_reachable_through_run(self) -> None:
         result, passed = run("sync-issue-types", {}, lambda: board(TypesGh()))
         self.assertTrue(passed and result["dry_run"])
+
+
+class IssueStateTests(unittest.TestCase):
+    def patches(self, gh: FakeGh) -> list[tuple[str, ...]]:
+        return [call for call in gh.calls if "PATCH" in call]
+
+    def test_done_closes_as_completed_and_canceled_as_not_planned(self) -> None:
+        gh = FakeGh()
+        result = board(gh).set_fields({"dry_run": False, "changes": [
+            {"issue": 12, "field": "Status", "value": "Done"}, {"issue": 13, "field": "Status", "value": "Canceled"}]})
+        self.assertEqual([(entry["issue"], entry["action"], entry["reason"], entry["result"])
+                          for entry in result["issues"]],
+                         [(12, "close", "completed", "closed"), (13, "close", "not_planned", "closed")])
+        self.assertEqual([call[-4:] for call in self.patches(gh)],
+                         [("-f", "state=closed", "-f", "state_reason=completed"),
+                          ("-f", "state=closed", "-f", "state_reason=not_planned")])
+
+    def test_another_status_reopens_a_closed_issue_and_a_closed_done_issue_is_left(self) -> None:
+        gh = FakeGh()
+        gh.states = {12: "closed", 13: "closed"}
+        result = board(gh).set_fields({"dry_run": False, "changes": [
+            {"issue": 12, "field": "Status", "value": "Ready"}, {"issue": 13, "field": "Status", "value": "Done"}]})
+        self.assertEqual(result["issues"], [{"issue": 12, "status": "Ready", "action": "reopen", "result": "reopened"}])
+        self.assertEqual([call[-2:] for call in self.patches(gh)], [("-f", "state=open")])
+
+    def test_a_status_already_set_still_closes_an_open_issue(self) -> None:
+        gh = FakeGh()
+        gh.item_page["node"]["items"]["nodes"][0]["fieldValues"]["nodes"][0]["name"] = "Done"
+        result = board(gh).set_fields({"dry_run": False,
+                                       "changes": [{"issue": 12, "field": "Status", "value": "Done"}]})
+        self.assertEqual(result["changes"][0]["result"], "skipped")
+        self.assertEqual(result["issues"][0]["result"], "closed")
+
+    def test_dry_run_and_other_fields_change_no_issue(self) -> None:
+        gh = FakeGh()
+        result = board(gh).set_fields({"changes": [{"issue": 12, "field": "Status", "value": "Done"},
+                                                   {"issue": 13, "field": "Story Points", "value": 2}]})
+        self.assertEqual(result["issues"], [{"issue": 12, "status": "Done", "action": "close", "reason": "completed",
+                                             "result": "would close"}])
+        self.assertEqual(self.patches(gh), [])
+
+
+class AddItemsTests(unittest.TestCase):
+    def test_a_new_issue_is_added_with_the_first_status(self) -> None:
+        gh = FakeGh()
+        result = board(gh).add_items({"dry_run": False, "issues": [13, 12]})
+        self.assertEqual(result["items"], [{"issue": 12, "actions": [], "result": "skipped"},
+                                           {"issue": 13, "actions": ["add", "Status Backlog"], "result": "applied"}])
+        (update,) = gh.mutations()
+        self.assertIn("item=PVTI_13", update)
+        self.assertIn("value=o_backlog", update)
+
+    def test_an_item_without_a_status_gets_one_and_a_dry_run_writes_nothing(self) -> None:
+        gh = FakeGh()
+        gh.item_page["node"]["items"]["nodes"][0]["fieldValues"]["nodes"].pop(0)
+        result = board(gh).add_items({"issues": [12]})
+        self.assertEqual(result["items"], [{"issue": 12, "actions": ["Status Backlog"], "result": "would apply"}])
+        self.assertEqual(gh.mutations(), [])
+
+    def test_invalid_payloads_are_refused(self) -> None:
+        payloads: tuple[dict, ...] = ({}, {"issues": []}, {"issues": [0]}, {"issues": ["12"]},
+                                      {"issues": [12], "extra": 1}, {"issues": list(range(1, 52))})
+        for payload in payloads:
+            with self.subTest(payload=payload), self.assertRaises(BridgeError):
+                board(FakeGh()).add_items(payload)
+
+    def test_dump_config_lists_the_project_workflows(self) -> None:
+        config, _ = run("dump-config", {}, lambda: board(FakeGh()))
+        self.assertEqual([(flow["name"], flow["enabled"]) for flow in config["workflows"]],
+                         [("Auto-close issue", True), ("Auto-add to project", False)])
+        result, _ = run("add-items", {"issues": [13]}, lambda: board(FakeGh()))
+        self.assertTrue(result["dry_run"])
 
 
 if __name__ == "__main__":

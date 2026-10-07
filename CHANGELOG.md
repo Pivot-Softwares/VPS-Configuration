@@ -23,6 +23,8 @@ All notable changes to this repository are documented here. The format follows
 - Native issue types: the board bridge's `sync-issue-types` creates the missing organization issue types and sets each
   issue's type from its label, the hierarchy guard flags a type that doesn't match the label with `type-mismatch`, and
   each issue form sets its type (#25).
+- Board bridge operation `add-items`, which the `board` workflow runs for every new, reopened or transferred issue, and
+  the Project's workflows with their state in `dump-config` (#30).
 
 ### Fixed
 
@@ -30,3 +32,5 @@ All notable changes to this repository are documented here. The format follows
   number of hidden items and how to fix the App's access, and report GitHub errors (#22).
 - An iteration title now resolves to the current or a future iteration before a completed one, and a title shared by
   two iterations is refused instead of resolving to either (#8).
+- Setting Status to Done or Canceled through the bridge now closes the issue, and any other Status reopens it; the
+  Project's Auto-close workflow didn't act on the bridge's changes (#30).

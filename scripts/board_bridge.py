@@ -8,11 +8,15 @@ Purpose: the agent works from Claude Code cloud sessions, where GitHub GraphQL i
 reads the result from the log between BOARD-RESULT-BEGIN and BOARD-RESULT-END.
 
 Operations (environment OPERATION, payload in PAYLOAD):
-  dump-config  {}                                    fields with option and iteration ids, and views
+  dump-config  {}                                    fields with option and iteration ids, views and the Project's
+                                                     built-in workflows with their state
   read-items   {"issues": [12, 13]} or {}            Project item ids and field values
   preflight    {"task": 12}                          the active-sprint gate of work_gate.py; fails on any FAIL
   report       {"apply_labels": true}                the board report of work_gate.py
-  set-fields   {"dry_run": true, "changes": [...]}   each change {"issue": 12, "field": "Status", "value": "Ready"}
+  set-fields   {"dry_run": true, "changes": [...]}   each change {"issue": 12, "field": "Status", "value": "Ready"};
+                                                     a Status of Done or Canceled closes the issue, any other reopens it
+  add-items    {"dry_run": true, "issues": [12]}     adds issues to the Project with Status Backlog when they have none;
+                                                     the workflow runs it for every new or reopened issue
   add-iteration {"dry_run": true, "field": "Sprint", "title": "Sprint 3", "start_date": "2026-11-03"}
                                                      adds an iteration ("duration" in days defaults to the field's)
   set-options  {"dry_run": true, "field": "Area", "options": [{"name": "Security", "from": "Platform"}]}
@@ -46,7 +50,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 OPERATIONS = ("dump-config", "read-items", "preflight", "report", "set-fields", "add-iteration", "set-options",
-              "sync-issue-types")
+              "sync-issue-types", "add-items")
+# The Status values that close an issue, with the reason; any other Status keeps or makes the issue open.
+CLOSING = {"Done": "completed", "Canceled": "not_planned"}
 BEGIN, END = "BOARD-RESULT-BEGIN", "BOARD-RESULT-END"
 MAX_CHANGES = 200
 
@@ -57,7 +63,8 @@ CONFIG_QUERY = """query($org: String!, $number: Int!) { organization(login: $org
     ... on ProjectV2SingleSelectField { options { id name color description } }
     ... on ProjectV2IterationField { configuration { duration startDay
       iterations { id title startDate duration } completedIterations { id title startDate duration } } } } }
-  views(first: 50) { nodes { id number name layout filter } } } } }"""
+  views(first: 50) { nodes { id number name layout filter } }
+  workflows(first: 20) { nodes { number name enabled } } } } }"""
 
 ITEMS_QUERY = """query($project: ID!, $cursor: String) { node(id: $project) { ... on ProjectV2 {
   items(first: 100, after: $cursor) { pageInfo { hasNextPage endCursor } nodes { id
@@ -298,7 +305,8 @@ class Board:
 
     def config(self) -> dict:
         return {"project": {key: self.project[key] for key in ("id", "title", "url")},
-                "fields": self.project["fields"]["nodes"], "views": self.project["views"]["nodes"]}
+                "fields": self.project["fields"]["nodes"], "views": self.project["views"]["nodes"],
+                "workflows": (self.project.get("workflows") or {}).get("nodes", [])}
 
     def items(self) -> dict[int, dict]:
         """Maps each issue number on the Project to its item id and field values by field name.
@@ -372,7 +380,58 @@ class Board:
                 items.setdefault(change.issue, {"item": item, "fields": {}})["fields"][change.field] = change.value
                 self.write(item, field, field.resolve(change.value))
             results.append({**change.__dict__, "from": current, "result": "would set" if dry_run else "set"})
-        return {"dry_run": dry_run, "changes": results}
+        return {"dry_run": dry_run, "changes": results, "issues": self.match_states(changes, dry_run)}
+
+    def match_states(self, changes: list[Change], dry_run: bool) -> list[dict]:
+        """Closes or reopens each issue whose Status the payload names, so the issue's state follows its Status.
+
+        Done closes as completed and Canceled as not planned; any other Status reopens a closed issue. The Project's
+        built-in Auto-close workflow didn't close the items the bridge set to Done (#29), so the bridge does it.
+        """
+        statuses = {change.issue: change.value for change in changes if change.field == "Status" and change.value}
+        results = []
+        for number, status in sorted(statuses.items()):
+            state = json.loads(self.gh("api", f"repos/{self.repository}/issues/{number}"))["state"]
+            reason = CLOSING.get(status)
+            if reason and state == "open":
+                action, fields = "close", ["-f", "state=closed", "-f", f"state_reason={reason}"]
+            elif not reason and state == "closed":
+                action, fields = "reopen", ["-f", "state=open"]
+            else:
+                continue
+            if not dry_run:
+                self.gh("api", "-X", "PATCH", f"repos/{self.repository}/issues/{number}", *fields)
+            done = {"close": "closed", "reopen": "reopened"}[action]
+            results.append({"issue": number, "status": status, "action": action,
+                            **({"reason": reason} if reason else {}), "result": f"would {action}" if dry_run else done})
+        return results
+
+    def add_items(self, payload: dict) -> dict:
+        """Adds issues to the Project and gives each one without a Status the first one, Backlog (#29).
+
+        The issues workflow runs it for every new issue, so the board doesn't depend on the Project's Auto-add rule.
+        """
+        check_keys(payload, {"issues"}, {"dry_run"})
+        dry_run = dry_run_flag(payload)
+        numbers = issue_numbers(payload, "issues")
+        if not 1 <= len(numbers) <= 50 or any(number < 1 for number in numbers):
+            raise BridgeError("issues must be a list of 1 to 50 issue numbers.")
+        items = self.items()
+        status = self.fields["Status"]
+        first = next(iter(status.choices))
+        results = []
+        for number in sorted(set(numbers)):
+            item = items.get(number)
+            actions = [] if item else ["add"]
+            if not (item or {}).get("fields", {}).get("Status"):
+                actions.append(f"Status {first}")
+            if not dry_run and actions:
+                item_id = item["item"] if item else self.add(number)
+                if f"Status {first}" in actions:
+                    self.write(item_id, status, status.choices[first])
+            results.append({"issue": number, "actions": actions,
+                            "result": "skipped" if not actions else ("would apply" if dry_run else "applied")})
+        return {"dry_run": dry_run, "items": results}
 
     def usage(self, name: str, items: dict[int, dict] | None = None) -> dict[int, str]:
         """Each issue's current value of a field, by option name or iteration title."""
@@ -517,7 +576,8 @@ def sync_issue_types(board: Board, payload: dict) -> dict:
             board.gh("api", "-X", "POST", f"orgs/{board.org}/issue-types", "-f", f"name={name}",
                      "-F", "is_enabled=true", "-f", f"description={description}", "-f", f"color={color}")
         created.append(name)
-    pages = json.loads(board.gh("api", "--paginate", "--slurp", f"repos/{board.repository}/issues?state=all&per_page=100"))
+    pages = json.loads(board.gh("api", "--paginate", "--slurp",
+                                f"repos/{board.repository}/issues?state=all&per_page=100"))
     changes, skipped = [], []
     for issue in sorted((issue for page in pages for issue in page if "pull_request" not in issue),
                         key=lambda issue: issue["number"]):
@@ -578,6 +638,8 @@ def run(operation: str, payload: dict, board_factory: Callable[[], Board]) -> tu
         return board.set_options(payload), True
     if operation == "sync-issue-types":
         return sync_issue_types(board, payload), True
+    if operation == "add-items":
+        return board.add_items(payload), True
     os.environ["BOARD_PROJECT_ID"] = board.project["id"]
     return gate(operation, payload)
 
