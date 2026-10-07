@@ -71,6 +71,10 @@ with an unknown id. The bridge works by names, so the ids here are for checking,
 | Start date | `PVTF_lADOFC5Sts4Bl7IIzhkmEIs` | a date |
 | Target date | `PVTF_lADOFC5Sts4Bl7IIzhkmEIw` | a date |
 
+Project workflows (`dump-config`, 2026-10-07): Item closed 1 and Item reopened 7 **off** (A4); Pull request merged 2,
+Auto-close issue 3, Auto-add sub-issues to project 4, Pull request linked to issue 5, Item added to project 6 and
+Auto-add to project 8 **on**. The API can read them but not change them.
+
 Project node id `PVT_kwDOFC5Sts4Bl7II`. Milestones are releases: v1.0 #1. The sprints each release owns are in the
 "Sprint sequence" table of its record in `docs/planning/releases/`.
 
@@ -85,10 +89,15 @@ short Python script in the scratchpad that is safe to rerun.
 
 1. Classify it first (`work-classification-and-hierarchy`) and pick its parent.
 2. Write the body with exactly the headings of its issue form in `.github/ISSUE_TEMPLATE/` (`### Parent`,
-   `### Purpose`, and so on), with LF line endings. Record what the owner decided under
+   `### Purpose`, and so on), with LF line endings. Read them from the form file every time
+   (`grep 'label:' .github/ISSUE_TEMPLATE/<n>-<type>.yml`): a feature has Capability boundaries, Expected outcomes and
+   Completion conditions; a spike has Research question, Exit criteria and Findings or decision deliverable (#38 and
+   #39 were created with the wrong headings on 2026-10-07). Record what the owner decided under
    `### Owner decisions (<date>, recorded here)`.
 3. Create it with its `type:` label, the matching issue type, milestone and assignee `AnnabiGihed`, titled
-   `<Type>: <title>` (`issue_write` takes `type`; the forms set it themselves).
+   `<Type>: <title>` (`issue_write` takes `type`; through REST, `-f type=<Type>`; the forms set it themselves). The
+   Project adds it by itself with Status Backlog (its Auto-add rule, with the `board` workflow's `add-items` as
+   backstop).
 4. Link the parent at once with the child's database id (not its number):
    `gh api -X POST repos/Pivot-Softwares/VPS-Configuration/issues/<parent>/sub_issues -F sub_issue_id=<child id>`.
 5. Set its fields with `set-fields`: Status, Sprint, Delivery Stage, Priority, Area and, for outcome items, Story Points
@@ -124,6 +133,9 @@ short Python script in the scratchpad that is safe to rerun.
 3. **Comment first, then set Done.** `set-fields` closes the issue as soon as its Status becomes Done, so post the
    evidence comment before setting the Target date to the closing day and Status `Done`.
 4. Check the result's `issues` entry says `closed`; never close an issue by hand instead.
+   - **A task with checks after the merge** is closed by the merge too (until #33 keeps it open). Post a comment
+     naming the checks still due, set Status In Review (which reopens it), run the checks, then post the evidence and
+     set Done (which closes it again). Done this way for #8, #25 and #30.
 5. Validate the parents independently (`work-task-execution-and-completion`) and close each with its own evidence.
 6. Run `report` and report its blocking categories.
 
@@ -140,7 +152,10 @@ short Python script in the scratchpad that is safe to rerun.
 | --- | --- |
 | `read-items` returned `{}` while `set-fields` wrote values the owner could see (#21): GitHub hides an item's issue from a GitHub App whose installation can't access its repository, and the readers skipped such items silently. | Both readers now stop with the hidden-item count and the fix (give the installation access to the repository). Never treat an unreadable item as absent. |
 | The Project's **Auto-add to project** rule didn't add the first issues. | The `board` workflow adds every new issue with `add-items` (#29); `dump-config` lists the Project's workflows and their state. |
-| Setting Status to Done didn't close #5, #7, #8, #24 or #25: the Project's **Auto-close issue** workflow didn't act on the bridge's change. | `set-fields` closes on Done or Canceled and reopens on any other Status (#29). |
+| Setting Status to Done didn't close #5, #7, #8, #24 or #25: the Project's **Auto-close issue** workflow is on but didn't act on the bridge's change (read with `dump-config` on 2026-10-07). | `set-fields` closes on Done or Canceled and reopens on any other Status (#29). |
+| #5, closed and Done since 2026-10-06, read In Progress on 2026-10-07; GitHub keeps no history of Project field changes, and the other items named by the same pull requests kept Done. | Run `report` after every closing round and repair a mismatch at once, recorded on the item. The Project's **Pull request linked to issue** and **Pull request merged** workflows are on and may move Status. |
+| A wait for an issue-event run filtered on a `created_at` later than the run, and missed it. | Wait for runs numbered above the last one seen before the trigger, or filter from before the triggering action. |
+| Moving a task to another sprint freed no capacity: Story Points sit on its outcome item (#34 under #31, 2026-10-07). | Split the outcome item, re-estimate both, and record it (#42). |
 | A merge closed task #8 before its post-merge runs. | Reopen it with a comment naming the runs still due, and close it again with their evidence. |
 | `create-github-app-token` has no input for the organization's Issue types permission. | `sync-issue-types` runs with a token that lists no permissions; never add an undocumented `permission-*` input. |
 | The copied Sprint field held RaidManager's completed iterations, one titled like the new `Sprint 1`, and the lookup by title could pick the completed one (#7). | Titles resolve to current or future iterations first and shared titles are refused; sprints are added with `add-iteration`. |

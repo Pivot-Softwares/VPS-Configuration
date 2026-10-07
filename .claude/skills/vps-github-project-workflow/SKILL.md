@@ -44,7 +44,9 @@ The commands are in `vps-board-operations`.
 2. Pass the active-sprint gate (`preflight`) before starting and before resuming. If it fails, stop and report the
    violated rule.
 3. Fetch the latest `main` and create one `feature/<task-number>-<slug>` or `fix/<task-number>-<slug>` branch from
-   `origin/main`. Documentation, decision records, planning and skills use `feature/` too. No other prefix, no
+   `origin/main`. (The delivery template's App will create task branches named `<ParentType>-<parent>-Task-<task>`,
+   owner decision of 2026-10-07; this naming applies once the App does it.) Add the branch's fetch refspec
+   (`vps-conventions` §9). Documentation, decision records, planning and skills use `feature/` too. No other prefix, no
    `develop`, no direct push to `main`. Set Status and Delivery Stage (`work-task-execution-and-completion`).
 4. Implement only the task's scope while satisfying the parent's applicable criteria:
    - every choice with a consequence goes through `decision-options` before it is implemented;

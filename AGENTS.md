@@ -3,6 +3,13 @@
 Use Gihed Annabi for author and owner attribution in documentation, project metadata and copyright notices. Keep this
 spelling consistent in future edits.
 
+## Primary goal
+
+Everything in this repository serves a **delivery template that one action applies to any repository of a GitHub
+organization**, with the board, the rules, the checks and full automation (owner decisions of 2026-10-07, epic #37).
+Read "Primary goal" in `.agents/skills/vps-conventions/SKILL.md` before any work: it states the automation target,
+the decisions taken and what "automated" means (nobody, neither the owner nor the agent, triggers it).
+
 ## Skills
 
 Project skills live in `.agents/skills/` and, identically, in `.claude/skills/` (for Claude Code).
@@ -40,3 +47,5 @@ Project skills live in `.agents/skills/` and, identically, in `.claude/skills/` 
 - **When told a pull request is merged**, confirm it, clean up its branches, and close its task with evidence before
   anything else.
 - **"New session"**: run the session-close routine of `vps-conventions` §10.
+- **Report automation honestly:** a step the agent or the owner starts is manual, even when a workflow does the work.
+- **When the shell is blocked**, continue with the GitHub tools (`vps-conventions` §9); never wait idle.
